@@ -13,6 +13,8 @@ type KernelService = {
 };
 
 type Bindings = {
+  PLANETARY_MODE: string;
+  UMBRELLA_ENFORCEMENT: string;
   KERNEL_SERVICE?: KernelService;
   KERNEL_URL?: string;
 };
@@ -133,7 +135,7 @@ async function callKernel(env: Bindings, envelope: KernelEnvelope): Promise<Resp
 }
 
 function bearerToken(header: string | undefined): string | null {
-  const match = /^Bearer\s+(.+)$/i.exec(header ?? '');
+  const match = /^Bearer\s+(.+)$/.exec(header ?? '');
   return match?.[1]?.trim() || null;
 }
 
