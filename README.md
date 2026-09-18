@@ -7,6 +7,23 @@
 
 Portal-OS is a distributed operating system built on Cloudflare Workers, with a kernel written in Python and a cognitive architecture built on SIM (Symbolic Intelligent Model).
 
+## Cloudflare Pages build location
+
+This repository is split into separate build targets:
+
+- UI build lives in `/ui`
+- Worker build lives in `/worker`
+- OS-layer subsystem code remains under the internal architecture folders (`substrate`, `governance`, `kernel`, `cognitive`, `inference`, `integration`, etc.)
+
+Cloudflare Pages must be configured to run the UI build from `/ui` and publish the generated app from `ui/dist`.
+
+Use the following configuration in Cloudflare Pages:
+
+- Build command: `cd ui && npm install && npm run build`
+- Output directory: `ui/dist`
+
+Do not configure the root of the repository as a build root. The repo root is not the Pages app root and must not be used for dependency installation or UI compilation.
+
 ## Structure
 
 ```
@@ -16,13 +33,13 @@ kernel/
   ├── boot.py                     # Kernel initialization
   ├── scheduler.py                # Multi-domain scheduler
   ├── invariants.py               # System invariants
-  └── [modules]/                  # Kernel subsystems
-identity/                          # Identity & authentication
-governance/                        # Rules & policies
-routing/                          # Message routing
-orchestration/                    # Task orchestration
-tec/                              # TEC execution layer
-cognitive/                        # SIM cognitive architecture
+  └── [modules]/                 # Kernel subsystems
+identity/                        # Identity & authentication
+governance/                      # Rules & policies
+routing/                         # Message routing
+orchestration/                   # Task orchestration
+tec/                             # TEC execution layer
+cognitive/                       # SIM cognitive architecture
 ```
 
 ## Rebuild 2 — What It Is
