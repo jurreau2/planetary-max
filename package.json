@@ -4,7 +4,11 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "node scripts/test-typescript.mjs",
+    "test:apex": "node scripts/test-typescript.mjs apex",
+    "test:deploy": "node scripts/test-typescript.mjs deploy",
+    "readiness": "node scripts/check-deployment-config.mjs"
   },
   "dependencies": {
     "hono": "^4.13.7"
