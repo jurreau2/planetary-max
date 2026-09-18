@@ -1,137 +1,162 @@
 import { Hono } from 'hono';
+import { deepFreeze, stableHash } from './apex/canonical.ts';
+import type { JsonValue } from './apex/types.ts';
+import { validateDeploymentReadiness } from './deploy/readiness.ts';
+import type { DeploymentBindings } from './deploy/readiness.ts';
+import { resolveKernelRoute } from './deploy/routes.ts';
+import type { KernelRoute } from './deploy/routes.ts';
+import {
+  createObservabilityEvent,
+  executeFailClosed,
+  isJsonValue,
+  normalizeKernelError,
+  serializeObservabilityEvent,
+} from './deploy/validation.ts';
+
+type JsonObject = { readonly [key: string]: JsonValue };
 
 type KernelEnvelope = {
-  id: string;
-  type: string;
-  payload: Record<string, unknown>;
-  identity: string;
-  governanceContext: Record<string, unknown>;
-};
-
-type KernelService = {
-  fetch(request: Request): Promise<Response>;
-};
-
-type Bindings = {
-  KERNEL_SERVICE?: KernelService;
-  KERNEL_URL?: string;
-  PLANETARY_MODE: string;
-  UMBRELLA_ENFORCEMENT: string;
+  readonly id: string;
+  readonly type: string;
+  readonly payload: JsonObject;
+  readonly identity: string;
+  readonly governanceContext: JsonObject;
 };
 
 type KernelResult = {
-  ok?: boolean;
-  error?: { code?: string; message?: string };
-  [key: string]: unknown;
+  readonly ok?: boolean;
+  readonly error?: { readonly code?: string; readonly message?: string };
+  readonly [key: string]: unknown;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+class InvalidMessageError extends Error {}
 
-// ⭐ ROOT ROUTE — this fixes the 404 at /
-app.get('/', (c) => {
-  return c.json({
-    status: 'Portal‑OS live',
-    worker: 'plantetary-max',
-    mode: c.env.PLANETARY_MODE,
-    umbrella: c.env.UMBRELLA_ENFORCEMENT
-  });
-});
+const app = new Hono<{ Bindings: DeploymentBindings }>();
 
-app.get('/health', (c) => c.json({ status: 'ok', service: 'portal-os-worker' }));
+/** A single kernel-primary route prevents local health, state, or fallback responses. */
+app.all('*', async (context) => {
+  const readiness = validateDeploymentReadiness(context.env);
+  if (!readiness.ready) {
+    return normalizeKernelError('DEPLOYMENT_NOT_READY', 'Deployment bindings or invariants are not ready', 503);
+  }
 
-app.post('/api/kernel/message', async (c) => {
-  const identity = bearerToken(c.req.header('Authorization'));
-  if (!identity) return c.json({ ok: false, error: { code: 'UNAUTHENTICATED', message: 'Bearer token required' } }, 401);
+  const identity = bearerToken(context.req.header('Authorization'));
+  if (identity === null) return normalizeKernelError('UNAUTHENTICATED', 'Bearer token required', 401);
 
-  let body: unknown;
+  const url = new URL(context.req.url);
+  let route: KernelRoute;
   try {
-    body = await c.req.json();
+    route = resolveKernelRoute(context.req.method, url.pathname);
   } catch {
-    return c.json({ ok: false, error: { code: 'INVALID_JSON', message: 'Request body must be JSON' } }, 400);
+    return normalizeKernelError('ROUTE_FORBIDDEN', 'Local route is not available', 404);
   }
-  if (!isRecord(body) || typeof body.type !== 'string') {
-    return c.json({ ok: false, error: { code: 'INVALID_MESSAGE', message: 'type and object payload are required' } }, 400);
-  }
-  const payload = body.payload === undefined ? {} : body.payload;
-  if (!isRecord(payload)) {
-    return c.json({ ok: false, error: { code: 'INVALID_MESSAGE', message: 'type and object payload are required' } }, 400);
-  }
-  const envelope = createEnvelope(
-    body.type,
-    payload,
-    identity,
-    isRecord(body.governanceContext) ? body.governanceContext : {},
-  );
-  return kernelResponse(c.env, envelope);
-});
 
-app.get('/universe/state', async (c) => universeRequest(c.env, c.req.header('Authorization'), 'universe.state', {}));
-app.get('/universe/umbrella', async (c) => universeRequest(c.env, c.req.header('Authorization'), 'universe.umbrella', {}));
-app.post('/universe/tick', async (c) => {
-  let payload: Record<string, unknown> = {};
-  const contentType = c.req.header('Content-Type') ?? '';
-  if (contentType.includes('application/json')) {
-    try {
-      const body: unknown = await c.req.json();
-      if (!isRecord(body)) return c.json({ ok: false, error: { code: 'INVALID_JSON', message: 'Tick payload must be an object' } }, 400);
-      payload = body;
-    } catch {
-      return c.json({ ok: false, error: { code: 'INVALID_JSON', message: 'Request body must be JSON' } }, 400);
+  let body: JsonValue;
+  try {
+    body = await readRequestBody(context.req.raw, route);
+  } catch {
+    return normalizeKernelError('INVALID_JSON', 'Request body must contain valid JSON', 400);
+  }
+
+  let envelope: KernelEnvelope;
+  try {
+    envelope = requestEnvelope(route, url, body, identity);
+  } catch (error) {
+    if (error instanceof InvalidMessageError) {
+      return normalizeKernelError('INVALID_MESSAGE', error.message, 400);
     }
+    throw error;
   }
-  return universeRequest(c.env, c.req.header('Authorization'), 'universe.tick', payload);
+  return kernelResponse(context.env, envelope);
 });
 
-async function universeRequest(
-  env: Bindings,
-  authorization: string | undefined,
-  type: string,
-  payload: Record<string, unknown>,
-): Promise<Response> {
-  const identity = bearerToken(authorization);
-  if (!identity) {
-    return Response.json({ ok: false, error: { code: 'UNAUTHENTICATED', message: 'Bearer token required' } }, { status: 401 });
+async function readRequestBody(request: Request, route: KernelRoute): Promise<JsonValue> {
+  if (request.method === 'GET' || request.method === 'HEAD') return null;
+  const text = await request.text();
+  if (text.length === 0) return null;
+  const contentType = request.headers.get('Content-Type') ?? '';
+  if (route.messageType !== 'kernel.message' && !contentType.includes('application/json')) return text;
+  const parsed: unknown = JSON.parse(text);
+  if (!isJsonValue(parsed)) throw new Error('Request JSON is outside the supported value domain');
+  return parsed;
+}
+
+function requestEnvelope(route: KernelRoute, url: URL, body: JsonValue, identity: string): KernelEnvelope {
+  const queryEntries: Array<[string, string]> = [];
+  url.searchParams.forEach((value, key) => queryEntries.push([key, value]));
+  const query = queryEntries
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0)
+    .map(([key, value]) => [key, value] as const);
+  const submitted = isJsonObject(body) ? body : undefined;
+  if (route.messageType === 'kernel.message' && typeof submitted?.type === 'string' && !isJsonObject(submitted.payload)) {
+    throw new InvalidMessageError('type requires an object payload');
   }
-  return kernelResponse(env, createEnvelope(type, payload, identity, { surface: 'worker-universe' }));
+  const submittedType = route.messageType === 'kernel.message' && typeof submitted?.type === 'string'
+    ? submitted.type
+    : route.messageType;
+  const submittedPayload = route.messageType === 'kernel.message' && isJsonObject(submitted?.payload)
+    ? submitted.payload
+    : undefined;
+  const tickPayload = route.messageType === 'universe.tick' ? (submitted ?? {}) : undefined;
+  const payload: JsonObject = submittedPayload ?? tickPayload ?? {
+    request: {
+      method: route.method,
+      path: route.path,
+      query,
+      body,
+    },
+  };
+  const governanceContext: JsonObject = {
+    surface: 'cloudflare-worker',
+    routeId: route.routeId,
+    identityRequired: route.identityRequired,
+    governanceRequired: route.governanceRequired,
+    apexGovernanceRequired: route.apexGovernanceRequired,
+  };
+  return createEnvelope(submittedType, payload, identity, governanceContext);
 }
 
 function createEnvelope(
   type: string,
-  payload: Record<string, unknown>,
+  payload: JsonObject,
   identity: string,
-  governanceContext: Record<string, unknown>,
+  governanceContext: JsonObject,
 ): KernelEnvelope {
-  return { id: crypto.randomUUID(), type, payload, identity, governanceContext };
+  const envelopeIdentity: JsonValue = { type, payload, identity, governanceContext };
+  return deepFreeze({
+    id: `kernel-message-${stableHash(envelopeIdentity)}`,
+    type,
+    payload,
+    identity,
+    governanceContext,
+  });
 }
 
-async function kernelResponse(env: Bindings, envelope: KernelEnvelope): Promise<Response> {
+async function kernelResponse(env: DeploymentBindings, envelope: KernelEnvelope): Promise<Response> {
   try {
     const response = await callKernel(env, envelope);
-    const result = await response.json<KernelResult>();
-    const status = result.ok === false ? kernelErrorStatus(result.error?.code) : response.status;
-    return Response.json(result, { status });
-  } catch (error) {
-    console.error('Worker to kernel bridge failed', error);
-    return Response.json(
-      { ok: false, error: { code: 'KERNEL_UNAVAILABLE', message: 'Kernel bridge unavailable' } },
-      { status: 503 },
-    );
+    const parsed: unknown = await response.json();
+    if (!isKernelResult(parsed)) throw new Error('Kernel response is not normalized JSON');
+    const status = parsed.ok === false ? kernelErrorStatus(parsed.error?.code) : response.status;
+    return Response.json(parsed, { status });
+  } catch {
+    const event = createObservabilityEvent(0, 'error', 'KERNEL_UNAVAILABLE', { envelopeId: envelope.id });
+    console.error(serializeObservabilityEvent(event));
+    return normalizeKernelError('KERNEL_UNAVAILABLE', 'Kernel bridge unavailable', 503);
   }
 }
 
-async function callKernel(env: Bindings, envelope: KernelEnvelope): Promise<Response> {
-  const body = JSON.stringify(envelope);
+async function callKernel(env: DeploymentBindings, envelope: KernelEnvelope): Promise<Response> {
+  if (env.RESILIENCE_MODE !== 'strict' || env.CIRCUIT_BREAKER_MODE !== 'fail-closed') {
+    throw new Error('Kernel resilience configuration is not fail-closed');
+  }
   const request = new Request('http://kernel/api/kernel/message', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body,
+    body: JSON.stringify(envelope),
   });
-  if (env.KERNEL_SERVICE) return env.KERNEL_SERVICE.fetch(request);
-  if (env.KERNEL_URL) {
-    const target = `${env.KERNEL_URL.replace(/\/$/, '')}/api/kernel/message`;
-    return fetch(target, { method: 'POST', headers: request.headers, body });
-  }
-  throw new Error('Configure KERNEL_SERVICE or KERNEL_URL');
+  return executeFailClosed(() => env.KERNEL_SERVICE.fetch(request));
 }
 
 function bearerToken(header: string | undefined): string | null {
@@ -146,10 +171,22 @@ function kernelErrorStatus(code: string | undefined): number {
   return 500;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && isJsonValue(value);
+}
+
+function isKernelResult(value: unknown): value is KernelResult {
+  if (!isJsonObject(value) || (value.ok !== undefined && typeof value.ok !== 'boolean')) return false;
+  if (value.error === undefined) return true;
+  if (!isJsonObject(value.error)) return false;
+  return (value.error.code === undefined || typeof value.error.code === 'string')
+    && (value.error.message === undefined || typeof value.error.message === 'string');
 }
 
 export { app, createEnvelope };
 export * from './apex/index.ts';
+export * from './bindings/index.ts';
+export * from './deploy/readiness.ts';
+export * from './deploy/routes.ts';
+export * from './deploy/validation.ts';
 export default app;

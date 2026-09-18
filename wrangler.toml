@@ -1,11 +1,37 @@
 name = "planetary-max"
 main = "src/index.ts"
 compatibility_date = "2024-09-01"
+# Deployment blocker: replace this sentinel with the verified Cloudflare account ID.
+account_id = "00000000000000000000000000000000"
 
 [vars]
-PLANETARY_MODE = "single"
-UMBRELLA_ENFORCEMENT = "strict"
-MAXOS_MODULE = "local"
+PORTAL_OS_PHASE = "16"
+RESILIENCE_MODE = "strict"
+CIRCUIT_BREAKER_MODE = "fail-closed"
+OBSERVABILITY_MODE = "structured"
+
+[[services]]
+binding = "KERNEL_SERVICE"
+service = "portal-os-kernel"
+
+[[r2_buckets]]
+binding = "PORTAL_R2"
+bucket_name = "planetary-max-state"
+preview_bucket_name = "planetary-max-state-preview"
+
+[[kv_namespaces]]
+binding = "PORTAL_KV"
+# Deployment blockers: replace both sentinels with verified namespace IDs.
+id = "00000000000000000000000000000000"
+preview_id = "11111111111111111111111111111111"
+
+[[d1_databases]]
+binding = "PORTAL_D1"
+database_name = "planetary-max-state"
+migrations_dir = "migrations"
+# Deployment blockers: replace both sentinels with verified D1 UUIDs.
+database_id = "00000000-0000-0000-0000-000000000000"
+preview_database_id = "11111111-1111-1111-1111-111111111111"
 
 [build]
 command = "npm run build"
