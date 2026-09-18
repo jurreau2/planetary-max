@@ -1,0 +1,2 @@
+export type Economy = { gdp: number; inflation: number; production: number };
+export function economyStep(economy: Economy, population: number, resources: Record<string, number>): Economy { const production = Object.values(resources).reduce((a, b) => a + b, 0) * 0.001; return { gdp: economy.gdp + production, inflation: Math.max(0, economy.inflation + (population > 10000 ? 0.001 : -0.0002)), production }; }

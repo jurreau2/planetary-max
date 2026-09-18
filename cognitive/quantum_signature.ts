@@ -1,0 +1,2 @@
+export type QuantumSignature = { basis: number[]; coherence: number; hash: string };
+export function quantumSignature(values: number[]): QuantumSignature { const basis = values.map(v => Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0); const coherence = basis.length ? basis.reduce((a, v) => a + Math.abs(v), 0) / basis.length : 0; return { basis, coherence, hash: basis.map(v => v.toFixed(3)).join(':') }; }
