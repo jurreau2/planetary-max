@@ -8,6 +8,8 @@ workers_dev = true
 [vars]
 PLANETARY_MODE = "production"
 UMBRELLA_ENFORCEMENT = "enabled"
+# Set this to the deployed kernel adapter URL for HTTP bridging.
+KERNEL_URL = ""
 
 [[kv_namespaces]]
 binding = "PLANETARY_MAX_SNAPSHOT"
