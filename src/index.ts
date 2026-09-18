@@ -15,6 +15,8 @@ type KernelService = {
 type Bindings = {
   KERNEL_SERVICE?: KernelService;
   KERNEL_URL?: string;
+  PLANETARY_MODE: string;
+  UMBRELLA_ENFORCEMENT: string;
 };
 
 type KernelResult = {
@@ -149,4 +151,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export { app, createEnvelope };
+export * from './apex/index.ts';
 export default app;
