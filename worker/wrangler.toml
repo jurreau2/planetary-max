@@ -1,0 +1,20 @@
+name = "planetary-max"
+main = "src/index.ts"
+compatibility_date = "2024-09-18"
+
+account_id = "1303b308bfbb2fedfc33fcdde41145fa"
+workers_dev = true
+
+[vars]
+PLANETARY_MODE = "production"
+UMBRELLA_ENFORCEMENT = "enabled"
+KERNEL_URL = ""
+
+[[kv_namespaces]]
+binding = "PLANETARY_MAX_SNAPSHOT"
+id = "b1592a28b3a54fcf8275ba14937ba2cd"
+
+[[d1_databases]]
+binding = "PLANETARY_MAX_DB"
+database_id = "077bc434-9624-4193-af55-164a2440356d"
+database_name = "planetary-max-db"
