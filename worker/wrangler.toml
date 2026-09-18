@@ -1,3 +1,7 @@
+name = "portal-os"
+main = "src/index.ts"
+compatibility_date = "2026-09-18"
+
 account_id = "b96187fbfed864f60e67925517c2b9f2"
 workers_dev = true
 
