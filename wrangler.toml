@@ -1,11 +1,28 @@
-name = "planetary-max"
+name = "portal-os"
 main = "src/index.ts"
-compatibility_date = "2024-09-01"
+compatibility_date = "2024-09-18"
 
-[vars]
-PLANETARY_MODE = "single"
-UMBRELLA_ENFORCEMENT = "strict"
-MAXOS_MODULE = "local"
+account_id = "1303b308bfbb2fedfc33fcdde41145fa"
+workers_dev = true
 
-[build]
-command = "npm run build"
+# -------------------------
+# KV — Planetary Snapshot
+# -------------------------
+[[kv_namespaces]]
+binding = "PLANETARY_MAX_SNAPSHOT"
+id = "b1592a28b3a54fcf8275ba14937ba2cd"
+
+# -------------------------
+# D1 — Planetary Database
+# -------------------------
+[[d1_databases]]
+binding = "PLANETARY_MAX_DB"
+database_id = "077bc434-9624-4193-af55-164a2440356d"
+database_name = "planetary-max-db"
+
+# -------------------------
+# No R2 — Skipped
+# -------------------------
+# [[r2_buckets]]
+# binding = "PLANETARY_MAX_STATE"
+# bucket_name = "planetary-max-state"
