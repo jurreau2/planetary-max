@@ -72,12 +72,11 @@ app.get('/api/auth/status', async c => {
 });
 app.post('/api/auth/login', async c => {
   try {
-    const body = await c.req.json<{ username?: string; password?: string; role?: string }>();
+    const body = await c.req.json<{ username?: string; password?: string }>();
     const username = body.username?.trim();
-    if (!username || !body.password) return c.json({ error: 'username and password are required' }, 400);
-    const role: UserRole = body.role === 'admin' || body.role === 'operator' ? body.role : 'viewer';
+    if (username !== 'admin' || body.password !== 'admin') return c.json({ error: 'Invalid username or password' }, 401);
     const token = crypto.randomUUID();
-    const session: Session = { id: token, user: username, role, createdAt: new Date().toISOString() };
+    const session: Session = { id: token, user: username, role: 'admin', createdAt: new Date().toISOString() };
     await c.env.PLANETARY_MAX_SNAPSHOT.put(`session:${token}`, JSON.stringify(session));
     return c.json({ token, user: session.user, role: session.role });
   } catch { return c.json({ error: 'invalid login payload' }, 400); }
@@ -89,28 +88,15 @@ app.post('/api/auth/logout', async c => {
   return c.json({ ok: true });
 });
 
-for (const route of ['/api/state', '/api/planet', '/api/kernel', '/api/umbrella', '/api/quantum']) app.use(route, authMiddleware);
+for (const route of ['/api/state', '/api/planet', '/api/planetary', '/api/kernel', '/api/umbrella', '/api/quantum']) app.use(route, authMiddleware);
 app.get('/api/state', async c => c.json(await buildState(c.env)));
 app.post('/api/write', async c => { try { const patch = await c.req.json<StatePatch>(); state = applyUmbrellaToApex({ ...applyPatch(state, patch), umbrella: await getUmbrella(c.env), apex: state.apex }); return c.json({ ok: true, state }); } catch { return c.json({ ok: false, error: 'invalid patch' }, 400); } });
 app.get('/api/snapshot', c => c.json(createSnapshot(state)));
 app.get('/api/planet', async c => { const current = await buildState(c.env); return c.json({ state: current, synthesis: synthesize(current) }); });
+app.get('/api/planetary', async c => { const current = await buildState(c.env); return c.json({ state: current, synthesis: synthesize(current) }); });
 app.get('/api/kernel', async c => { lastTick = tick(state, lastTick.physics, lastTick.economy); state = applyUmbrellaToApex({ ...lastTick.state, umbrella: await getUmbrella(c.env), apex: state.apex }); return c.json({ ...lastTick, state }); });
-app.get('/api/umbrella', async c => {
-  try { return c.json(await getUmbrella(c.env)); }
-  catch { return c.json({ error: 'Unable to read Umbrella state' }, 503); }
-});
-app.post('/api/umbrella', async c => {
-  try {
-    const body = await c.req.json<{ mode?: string }>();
-    if (body.mode !== 'enabled' && body.mode !== 'disabled') return c.json({ error: 'mode must be enabled or disabled' }, 400);
-    const umbrella: UmbrellaState = { mode: body.mode };
-    await c.env.PLANETARY_MAX_SNAPSHOT.put('umbrella', JSON.stringify(umbrella));
-    // Keep mode-addressable keys for external validation/inspection while the canonical value remains `umbrella`.
-    await c.env.PLANETARY_MAX_SNAPSHOT.put(`umbrella:${umbrella.mode}`, JSON.stringify(umbrella));
-    state = applyUmbrellaToApex({ ...state, umbrella });
-    return c.json(umbrella);
-  } catch { return c.json({ error: 'Unable to persist Umbrella state' }, 503); }
-});
+app.get('/api/umbrella', async c => { try { return c.json(await getUmbrella(c.env)); } catch { return c.json({ error: 'Unable to read Umbrella state' }, 503); } });
+app.post('/api/umbrella', async c => { try { const body = await c.req.json<{ mode?: string }>(); if (body.mode !== 'enabled' && body.mode !== 'disabled') return c.json({ error: 'mode must be enabled or disabled' }, 400); const umbrella: UmbrellaState = { mode: body.mode }; await c.env.PLANETARY_MAX_SNAPSHOT.put('umbrella', JSON.stringify(umbrella)); await c.env.PLANETARY_MAX_SNAPSHOT.put(`umbrella:${umbrella.mode}`, JSON.stringify(umbrella)); state = applyUmbrellaToApex({ ...state, umbrella }); return c.json(umbrella); } catch { return c.json({ error: 'Unable to persist Umbrella state' }, 503); } });
 app.get('/api/quantum', c => c.json({ signature: quantumSignature([state.energy / 10000, state.population / 1000, state.tick / 100]), layer: 'MAX-Quantumn' }));
 app.post('/api/kernel/message', c => c.json({ ok: true, message: 'Use the typed Portal-OS API surface' }));
 export { app, json };
