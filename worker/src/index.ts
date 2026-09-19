@@ -31,6 +31,21 @@ async function readSession(env: Bindings, token: string | undefined): Promise<Se
 const authMiddleware = async (c: any, next: () => Promise<void>) => { const header = c.req.header('Authorization'); const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : undefined; const session = await readSession(c.env, token); if (!session) return c.json({ error: 'Authentication required' }, 401); c.set('user', session); await next(); };
 
 function quantumFor(current: GlobalState): QuantumSignature { return quantumSignature([current.energy / 10000, current.population / 1000, current.tick / 100]); }
+function eventEngine(current: GlobalState, kernel: KernelState, quantum: QuantumSignature): string[] {
+  const events: string[] = [];
+  const npc = (current as GlobalState & { npc?: { citizens?: Array<{ mood?: number }> } }).npc;
+  const moods = npc?.citizens?.map(citizen => citizen.mood ?? 1) ?? [];
+  const averageMood = moods.length ? moods.reduce((sum, mood) => sum + mood, 0) / moods.length : 1;
+  const production = kernel.economy.production;
+  const resourceTotal = Object.values(current.resources).reduce((sum, value) => sum + value, 0);
+  if (averageMood < 0.4) events.push('Unrest in core region');
+  if (production <= 0) events.push('Economic slowdown detected');
+  if (resourceTotal < 3000) events.push('Resource scarcity warning');
+  if (quantum.coherence < 0.5) events.push('Quantum anomaly detected');
+  if (current.umbrella.mode === 'disabled') events.push('Umbrella governance suspended');
+  if (current.apex.enforcement) events.push('Apex enforcement active');
+  return events;
+}
 
 function planetaryStep(current: GlobalState, kernel: KernelState, quantum: QuantumSignature): GlobalState {
   const governance = current.apex.enforcement ? 1 : 0.25;
@@ -46,14 +61,15 @@ function planetaryStep(current: GlobalState, kernel: KernelState, quantum: Quant
   const governanceFactor = current.umbrella.mode === 'enabled' ? 0.01 : -0.02;
   const migration = (stability - 1) * 10;
   const quantumDelta = coherence * 5 + anomaly;
-  const populationDelta = births - deaths + migration + (governanceFactor * current.population) + quantumDelta;
+  const populationDelta = births - deaths + migration + governanceFactor * current.population + quantumDelta;
   const population = Math.max(0, Math.floor(current.population + populationDelta));
   const foodDelta = Math.round(kernel.economy.production * 0.1 * governance - current.population * 0.01);
   const energyDelta = Math.round(kernel.economy.production * governance + coherence * 5);
   const regionPopulationTotal = Object.values(regions).reduce((sum, region) => sum + region.population, 0);
   const populationRatio = regionPopulationTotal > 0 ? population / regionPopulationTotal : 1;
   const balancedRegions = Object.fromEntries(Object.entries(regions).map(([name, region]) => [name, { ...region, population: Math.max(0, Math.floor(region.population * populationRatio)) }]));
-  return applyUmbrellaToApex({ ...current, tick: kernel.state.tick, updatedAt: new Date().toISOString(), population, energy: Math.max(0, current.energy + energyDelta), resources: { ...resources, food: Math.max(0, resources.food + foodDelta) }, regions: balancedRegions, events: [...current.events, ...kernel.events, `population:births=${Math.floor(births)},deaths=${Math.floor(deaths)},migration=${migration.toFixed(2)}`, `quantum:${quantum.hash}`].slice(-100) });
+  const events = eventEngine(current, kernel, quantum);
+  return applyUmbrellaToApex({ ...current, tick: kernel.state.tick, updatedAt: new Date().toISOString(), population, energy: Math.max(0, current.energy + energyDelta), resources: { ...resources, food: Math.max(0, resources.food + foodDelta) }, regions: balancedRegions, events: [...current.events, ...kernel.events, ...events, `population:births=${Math.floor(births)},deaths=${Math.floor(deaths)},migration=${migration.toFixed(2)}`, `quantum:${quantum.hash}`].slice(-100) });
 }
 
 async function runSimulation(env: Bindings): Promise<SimResult> {
