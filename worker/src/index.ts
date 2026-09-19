@@ -31,15 +31,29 @@ async function readSession(env: Bindings, token: string | undefined): Promise<Se
 const authMiddleware = async (c: any, next: () => Promise<void>) => { const header = c.req.header('Authorization'); const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : undefined; const session = await readSession(c.env, token); if (!session) return c.json({ error: 'Authentication required' }, 401); c.set('user', session); await next(); };
 
 function quantumFor(current: GlobalState): QuantumSignature { return quantumSignature([current.energy / 10000, current.population / 1000, current.tick / 100]); }
+
 function planetaryStep(current: GlobalState, kernel: KernelState, quantum: QuantumSignature): GlobalState {
   const governance = current.apex.enforcement ? 1 : 0.25;
   const coherence = quantum.coherence;
   const anomaly = (quantum.basis[0] ?? 0) * 0.5;
-  const populationDelta = Math.round((coherence * governance * 2) + anomaly);
+  const regions = Object.fromEntries(Object.entries(current.regions).map(([name, region]) => [name, { ...region, production: Math.max(0, region.production + kernel.economy.production * 0.01), stability: Math.max(0, Math.min(1, region.stability + (current.apex.enforcement ? 0.01 : -0.02) + coherence * 0.005)) }]));
+  const stabilityValues = Object.values(regions).map(region => region.stability);
+  const stability = stabilityValues.length ? stabilityValues.reduce((sum, value) => sum + value, 0) / stabilityValues.length : 0;
+  const resources = current.resources;
+  const resourceFactor = Math.max(0, (resources.food + resources.water + resources.minerals) / 10000);
+  const births = current.population * 0.002 * stability * resourceFactor;
+  const deaths = current.population * 0.001 * (1 / Math.max(stability, 0.01));
+  const governanceFactor = current.umbrella.mode === 'enabled' ? 0.01 : -0.02;
+  const migration = (stability - 1) * 10;
+  const quantumDelta = coherence * 5 + anomaly;
+  const populationDelta = births - deaths + migration + (governanceFactor * current.population) + quantumDelta;
+  const population = Math.max(0, Math.floor(current.population + populationDelta));
   const foodDelta = Math.round(kernel.economy.production * 0.1 * governance - current.population * 0.01);
-  const energyDelta = Math.round((kernel.economy.production * governance) + coherence * 5);
-  const regions = Object.fromEntries(Object.entries(current.regions).map(([name, region]) => [name, { ...region, population: Math.max(0, region.population + populationDelta), production: Math.max(0, region.production + kernel.economy.production * 0.01), stability: Math.max(0, Math.min(1, region.stability + (current.apex.enforcement ? 0.01 : -0.02) + coherence * 0.005)) }]));
-  return applyUmbrellaToApex({ ...current, tick: kernel.state.tick, updatedAt: new Date().toISOString(), population: Math.max(0, current.population + populationDelta), energy: Math.max(0, current.energy + energyDelta), resources: { ...current.resources, food: Math.max(0, (current.resources.food ?? 0) + foodDelta) }, regions, events: [...current.events, ...kernel.events, `quantum:${quantum.hash}`].slice(-100) });
+  const energyDelta = Math.round(kernel.economy.production * governance + coherence * 5);
+  const regionPopulationTotal = Object.values(regions).reduce((sum, region) => sum + region.population, 0);
+  const populationRatio = regionPopulationTotal > 0 ? population / regionPopulationTotal : 1;
+  const balancedRegions = Object.fromEntries(Object.entries(regions).map(([name, region]) => [name, { ...region, population: Math.max(0, Math.floor(region.population * populationRatio)) }]));
+  return applyUmbrellaToApex({ ...current, tick: kernel.state.tick, updatedAt: new Date().toISOString(), population, energy: Math.max(0, current.energy + energyDelta), resources: { ...resources, food: Math.max(0, resources.food + foodDelta) }, regions: balancedRegions, events: [...current.events, ...kernel.events, `population:births=${Math.floor(births)},deaths=${Math.floor(deaths)},migration=${migration.toFixed(2)}`, `quantum:${quantum.hash}`].slice(-100) });
 }
 
 async function runSimulation(env: Bindings): Promise<SimResult> {
