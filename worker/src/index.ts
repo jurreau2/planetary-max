@@ -14,6 +14,9 @@ export type GlobalState = PlanetaryState & { umbrella: UmbrellaState; apex: { en
 type Variables = { user: Session };
 type KernelState = Omit<TickResult, 'state'> & { state: PlanetaryState };
 type SimResult = { tick: number; state: GlobalState; kernel: KernelState; planetary: GlobalState; quantum: QuantumSignature; events: string[] };
+type RevenueApp = { id: string; name: string; description: string; metric: string; value: number; status: 'active' | 'ready' };
+type GovernanceModule = { id: string; name: string; description: string; price: string; enabled: boolean };
+type Forecast = { stability: number; production: number; population: number; events: string[]; confidence: number };
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization'] }));
@@ -45,6 +48,51 @@ function eventEngine(current: GlobalState, kernel: KernelState, quantum: Quantum
   if (current.umbrella.mode === 'disabled') events.push('Umbrella governance suspended');
   if (current.apex.enforcement) events.push('Apex enforcement active');
   return events;
+}
+
+function buildForecast(current: GlobalState, kernel: KernelState, quantum: QuantumSignature): Forecast {
+  const regionStability = Object.values(current.regions).reduce((sum, region) => sum + region.stability, 0) / Math.max(Object.keys(current.regions).length, 1);
+  const nextProduction = Math.max(0, kernel.economy.production + (quantum.coherence * 10) + (current.umbrella.mode === 'enabled' ? 4 : -2));
+  const nextPopulation = Math.max(0, Math.round(current.population + (current.population * 0.015 * regionStability) + (current.umbrella.mode === 'enabled' ? 25 : -15)));
+  const forecastEvents = [
+    ...(quantum.coherence < 0.5 ? ['Quantum anomaly forecast'] : []),
+    ...(regionStability < 0.7 ? ['Stability forecast at risk'] : []),
+    ...(nextProduction < 10 ? ['Low production outlook'] : ['Production outlook stable'])
+  ];
+  return {
+    stability: Number(regionStability.toFixed(3)),
+    production: Number(nextProduction.toFixed(2)),
+    population: nextPopulation,
+    events: forecastEvents,
+    confidence: Number((0.5 + quantum.coherence * 0.5).toFixed(3))
+  };
+}
+
+function buildRevenueBundle(current: GlobalState, kernel: KernelState, quantum: QuantumSignature): { apps: RevenueApp[]; governanceModules: GovernanceModule[]; worldbuilding: string[]; enterprise: string[]; forecast: Forecast } {
+  const apps: RevenueApp[] = [
+    { id: 'population-tracker', name: 'Population Tracker', description: 'Live births, deaths, migration, and regional stability monitor', metric: 'population', value: current.population, status: 'active' },
+    { id: 'resource-dashboard', name: 'Resource Dashboard', description: 'Food, water, minerals, and scarcity alerts across all sectors', metric: 'resources', value: Object.values(current.resources).reduce((sum, value) => sum + value, 0), status: 'active' },
+    { id: 'npc-sentiment', name: 'NPC Sentiment Analyzer', description: 'Citizen mood, compliance, dissent, and governance drift analytics', metric: 'mood', value: current.population * 0.003, status: 'ready' }
+  ];
+  const governanceModules: GovernanceModule[] = [
+    { id: 'compliance-engine', name: 'Compliance Engine', description: 'Umbrella-aligned compliance and civic stabilization', price: '$1,200/mo', enabled: current.umbrella.mode === 'enabled' },
+    { id: 'stability-optimizer', name: 'Stability Optimizer', description: 'Improves regional stability and prevents unrest', price: '$950/mo', enabled: true },
+    { id: 'resource-allocator', name: 'Resource Allocator', description: 'Balances food, water, and minerals across colony regions', price: '$1,500/mo', enabled: true }
+  ];
+  const worldbuilding = [
+    'Core Region civic archive',
+    'Faction rivalry dossier',
+    'Quantum anomaly narrative arc',
+    'Leader approval chronicle',
+    'Umbrella governance history'
+  ];
+  const enterprise = [
+    'MAX-Quantumn coherence analytics',
+    'Apex anomaly detection suite',
+    'Quantum forecasting for institutional clients',
+    'Simulation-as-a-service enterprise pricing' 
+  ];
+  return { apps, governanceModules, worldbuilding, enterprise, forecast: buildForecast(current, kernel, quantum) };
 }
 
 function planetaryStep(current: GlobalState, kernel: KernelState, quantum: QuantumSignature): GlobalState {
@@ -98,7 +146,7 @@ app.get('/api/auth/status', async c => { const header = c.req.header('Authorizat
 app.post('/api/auth/login', async c => { try { const body = await c.req.json<{ username?: string; password?: string }>(); if (body.username?.trim() !== 'admin' || body.password !== 'admin') return c.json({ error: 'Invalid username or password' }, 401); const token = crypto.randomUUID(); const session: Session = { id: token, user: 'admin', role: 'admin', createdAt: new Date().toISOString() }; await c.env.PLANETARY_MAX_SNAPSHOT.put(`session:${token}`, JSON.stringify(session)); return c.json({ token, user: session.user, role: session.role }); } catch { return c.json({ error: 'invalid login payload' }, 400); } });
 app.post('/api/auth/logout', async c => { const header = c.req.header('Authorization'); const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : undefined; if (token) await c.env.PLANETARY_MAX_SNAPSHOT.delete(`session:${token}`); return c.json({ ok: true }); });
 
-for (const route of ['/api/state', '/api/planet', '/api/planetary', '/api/kernel', '/api/umbrella', '/api/quantum', '/api/sim/tick']) app.use(route, authMiddleware);
+for (const route of ['/api/state', '/api/planet', '/api/planetary', '/api/kernel', '/api/umbrella', '/api/quantum', '/api/sim/tick', '/api/forecast', '/api/revenue', '/api/sim/state']) app.use(route, authMiddleware);
 app.get('/api/state', async c => c.json(await buildState(c.env)));
 app.post('/api/write', async c => { try { const patch = await c.req.json<StatePatch>(); state = applyUmbrellaToApex({ ...applyPatch(state, patch), umbrella: await getUmbrella(c.env), apex: state.apex }); return c.json({ ok: true, state }); } catch { return c.json({ ok: false, error: 'invalid patch' }, 400); } });
 app.get('/api/snapshot', c => c.json(createSnapshot(state)));
@@ -108,6 +156,9 @@ app.get('/api/kernel', async c => { const result = await runSimulation(c.env); r
 app.get('/api/umbrella', async c => { try { return c.json(await getUmbrella(c.env)); } catch { return c.json({ error: 'Unable to read Umbrella state' }, 503); } });
 app.post('/api/umbrella', async c => { try { const body = await c.req.json<{ mode?: string }>(); if (body.mode !== 'enabled' && body.mode !== 'disabled') return c.json({ error: 'mode must be enabled or disabled' }, 400); const umbrella: UmbrellaState = { mode: body.mode }; await c.env.PLANETARY_MAX_SNAPSHOT.put('umbrella', JSON.stringify(umbrella)); await c.env.PLANETARY_MAX_SNAPSHOT.put(`umbrella:${umbrella.mode}`, JSON.stringify(umbrella)); state = applyUmbrellaToApex({ ...state, umbrella }); return c.json(umbrella); } catch { return c.json({ error: 'Unable to persist Umbrella state' }, 503); } });
 app.get('/api/quantum', c => c.json(quantumFor(state)));
+app.get('/api/forecast', async c => { const current = await buildState(c.env); const quantum = quantumFor(current); return c.json(buildForecast(current, lastTick, quantum)); });
+app.get('/api/revenue', async c => { const current = await buildState(c.env); const quantum = quantumFor(current); return c.json(buildRevenueBundle(current, lastTick, quantum)); });
+app.get('/api/sim/state', async c => { const current = await buildState(c.env); const quantum = quantumFor(current); const bundle = buildRevenueBundle(current, lastTick, quantum); return c.json({ state: current, kernel: lastTick, quantum, forecast: bundle.forecast, apps: bundle.apps, modules: bundle.governanceModules, worldbuilding: bundle.worldbuilding, enterprise: bundle.enterprise }); });
 app.post('/api/sim/tick', async c => { try { return c.json(await runSimulation(c.env)); } catch { return c.json({ error: 'Simulation tick failed' }, 503); } });
 app.post('/api/kernel/message', c => c.json({ ok: true, message: 'Use the typed Portal-OS API surface' }));
 export { app, json };
