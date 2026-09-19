@@ -1,6 +1,43 @@
-export type Citizen = { id: string; mood: number; compliance: number; productivity: number; stabilitySensitivity: number };
-export type Faction = { id: string; support: number; dissent: number; influence: number; umbrellaAligned: boolean };
-export type Leader = { id: string; authority: number; approval: number; stabilityImpact: number };
+export type PeopleRole = 'worker' | 'leader' | 'citizen' | 'specialist' | 'enforcer';
+export type PeopleJob = 'production' | 'governance' | 'research' | 'logistics' | 'security';
+
+export type Person = {
+  id: string;
+  age: number;
+  role: PeopleRole;
+  job: PeopleJob;
+  faction: string;
+  mood: number;
+  compliance: number;
+  productivity: number;
+  influence: number;
+};
+
+export type PeopleFaction = {
+  id: string;
+  name: string;
+  ideology: string;
+  support: number;
+  dissent: number;
+  influence: number;
+};
+
+export type InfluenceEdge = {
+  from: string;
+  to: string;
+  weight: number;
+  kind: 'person' | 'faction' | 'leader';
+};
+
+export type PeopleState = {
+  people: Person[];
+  factions: PeopleFaction[];
+  influence: InfluenceEdge[];
+};
+
+export type Citizen = Person;
+export type Faction = PeopleFaction & { umbrellaAligned: boolean };
+export type Leader = Person & { authority: number; approval: number; stabilityImpact: number };
 export type NPCState = { citizens: Citizen[]; factions: Faction[]; leaders: Leader[] };
 
 export type PlanetaryState = {
@@ -13,16 +50,36 @@ export type PlanetaryState = {
   regions: Record<string, { population: number; stability: number; production: number }>;
   events: string[];
   npc: NPCState;
+  people: PeopleState;
 };
 
-export type StatePatch = Partial<Pick<PlanetaryState, 'population' | 'energy' | 'resources' | 'regions' | 'events' | 'npc'>>;
+export type StatePatch = Partial<Pick<PlanetaryState, 'population' | 'energy' | 'resources' | 'regions' | 'events' | 'npc' | 'people'>>;
 
 export function createPlanetaryState(now = new Date().toISOString()): PlanetaryState {
-  return { version: 1, tick: 0, updatedAt: now, population: 1000, energy: 10000, resources: { food: 5000, water: 5000, minerals: 2500 }, regions: { core: { population: 1000, stability: 1, production: 100 } }, events: [], npc: { citizens: [], factions: [], leaders: [] } };
+  return {
+    version: 1,
+    tick: 0,
+    updatedAt: now,
+    population: 1000,
+    energy: 10000,
+    resources: { food: 5000, water: 5000, minerals: 2500 },
+    regions: { core: { population: 1000, stability: 1, production: 100 } },
+    events: [],
+    npc: { citizens: [], factions: [], leaders: [] },
+    people: { people: [], factions: [], influence: [] },
+  };
 }
 
 export function applyPatch(state: PlanetaryState, patch: StatePatch, now = new Date().toISOString()): PlanetaryState {
-  return { ...state, ...patch, updatedAt: now, resources: patch.resources ? { ...state.resources, ...patch.resources } : state.resources, regions: patch.regions ? { ...state.regions, ...patch.regions } : state.regions, npc: patch.npc ? { ...state.npc, ...patch.npc } : state.npc };
+  return {
+    ...state,
+    ...patch,
+    updatedAt: now,
+    resources: patch.resources ? { ...state.resources, ...patch.resources } : state.resources,
+    regions: patch.regions ? { ...state.regions, ...patch.regions } : state.regions,
+    npc: patch.npc ? { ...state.npc, ...patch.npc } : state.npc,
+    people: patch.people ? { ...state.people, ...patch.people } : state.people,
+  };
 }
 
 export function validateState(state: PlanetaryState): string[] {
