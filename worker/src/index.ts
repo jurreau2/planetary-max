@@ -4,7 +4,6 @@ import { applyPatch, createPlanetaryState, type PlanetaryState, type StatePatch 
 import { createSnapshot } from '../../substrate/snapshot';
 import { synthesize } from '../../substrate/synthesis';
 import { tick as kernelTick, type TickResult } from '../../kernel/tick';
-import { stabilizeCurvature } from '../../governance/curvature';
 import { quantumSignature, type QuantumSignature } from '../../cognitive/quantum_signature';
 
 export type UmbrellaState = { mode: 'enabled' | 'disabled' };
