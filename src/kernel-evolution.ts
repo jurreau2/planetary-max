@@ -22,31 +22,62 @@ import {
   type KernelContext,
 } from "./ecosystem-architecture";
 
-/**
- * RuntimeState: The evolved kernel state after lane execution but before result assembly.
- * This is where autonomous layers enrich the state and meta.
- */
+export type AutonomyMode = "full" | "core" | "off";
+
+export type KernelAutonomyMeta = Readonly<{
+  mode: AutonomyMode;
+  phasesExecuted: readonly string[];
+  timestamp: number;
+}>;
+
+export type KernelMeta = Readonly<{
+  source: string;
+  lane: string;
+  autonomy?: KernelAutonomyMeta;
+  [key: string]: unknown;
+}>;
+
 export type RuntimeState = Readonly<{
   kernelState: PortalKernelState;
   simCoreState: JsonObject;
   identity: JsonObject;
-  meta: JsonObject;
+  meta: KernelMeta;
   storage: JsonObject;
   governanceContext: JsonObject;
 }>;
 
-/**
- * Phase execution mode: which phases to activate.
- * "full" = all phases 14-18 (complete autonomy)
- * "core" = phases 14-15 only (sim + truth engine)
- * "off" = no autonomous phases
- */
-export type AutonomyMode = "full" | "core" | "off";
+function normalizeMeta(meta: unknown, fallback: { source: string; lane: string }): KernelMeta {
+  const base = (typeof meta === "object" && meta !== null ? (meta as JsonObject) : {}) as JsonObject;
+  const lane = typeof base.lane === "string" ? base.lane : fallback.lane;
+  const source = typeof base.source === "string" ? base.source : fallback.source;
 
-/**
- * Extract RuntimeState from a KernelResult and metadata.
- * This normalizes the result shape into a consistent RuntimeState.
- */
+  const autonomy =
+    typeof base.autonomy === "object" && base.autonomy !== null && !Array.isArray(base.autonomy)
+      ? {
+          mode: (() => {
+            const mode = (base.autonomy as JsonObject).mode;
+            return mode === "full" || mode === "core" || mode === "off" ? mode : "core";
+          })(),
+          phasesExecuted: Array.isArray((base.autonomy as JsonObject).phasesExecuted)
+            ? ((base.autonomy as JsonObject).phasesExecuted as unknown[]).map((value) => String(value))
+            : [],
+          timestamp: Number((base.autonomy as JsonObject).timestamp ?? Date.now()),
+        }
+      : undefined;
+
+  const normalized: JsonObject = {
+    source,
+    lane,
+    ...base,
+  };
+
+  if (autonomy !== undefined) {
+    normalized.autonomy = autonomy;
+  }
+
+  return normalized as KernelMeta;
+}
+
 export function extractRuntimeState(
   result: KernelResult,
   envelope: KernelEnvelope,
@@ -55,53 +86,63 @@ export function extractRuntimeState(
   const body = typeof result.body === "object" && result.body !== null ? (result.body as JsonObject) : {};
 
   return {
-    kernelState: body.kernelState || {},
-    simCoreState: body.simCoreState || { tick: 0, stability: 0.7, confidence: 0.7 },
-    identity: body.identity || { id: envelope.identity || "system" },
-    meta: body.meta || { source: "kernel-lane", lane: envelope.lane },
-    storage: body.storage || {},
-    governanceContext: governance || { mode: "strict", decision: "allow" },
+    kernelState: (body.kernelState as PortalKernelState) || {},
+    simCoreState: (body.simCoreState as JsonObject) || { tick: 0, stability: 0.7, confidence: 0.7 },
+    identity: (body.identity as JsonObject) || { id: envelope.identity || "system" },
+    meta: normalizeMeta(body.meta || { source: "kernel-lane", lane: envelope.lane }, {
+      source: "kernel-lane",
+      lane: envelope.lane,
+    }),
+    storage: (body.storage as JsonObject) || {},
+    governanceContext: (governance as JsonObject) || { mode: "strict", decision: "allow" },
   };
 }
 
-/**
- * Assemble RuntimeState back into a KernelResult.
- * Preserves the original result shape while enriching with autonomous layers.
- */
 export function assembleKernelResult(
   original: KernelResult,
   evolved: RuntimeState,
   autonomyMode: AutonomyMode,
   phases: string[]
 ): KernelResult {
+  const originalMeta =
+    typeof original.body === "object" && original.body !== null
+      ? ((original.body as JsonObject).meta as JsonObject | undefined) ?? {}
+      : {};
+
+  const nextAutonomy: KernelAutonomyMeta = {
+    mode: autonomyMode,
+    phasesExecuted: phases,
+    timestamp: Date.now(),
+  };
+
+  const nextMeta = normalizeMeta(
+    {
+      ...originalMeta,
+      ...evolved.meta,
+      source: evolved.meta.source || originalMeta.source || "kernel-lane",
+      lane: evolved.meta.lane || originalMeta.lane || "sim",
+      autonomy: nextAutonomy,
+    },
+    {
+      source: "kernel-lane",
+      lane: "sim",
+    },
+  );
+
   return {
     ...original,
     body: {
-      ...original.body,
+      ...(typeof original.body === "object" && original.body !== null ? (original.body as JsonObject) : {}),
       kernelState: evolved.kernelState,
       simCoreState: evolved.simCoreState,
       identity: evolved.identity,
-      meta: {
-        ...(typeof original.body === "object" && original.body !== null && (original.body as JsonObject).meta
-          ? (original.body as JsonObject).meta
-          : {}),
-        ...evolved.meta,
-        autonomy: {
-          mode: autonomyMode,
-          phasesExecuted: phases,
-          timestamp: Date.now(),
-        },
-      },
+      meta: nextMeta,
       storage: evolved.storage,
       governanceContext: evolved.governanceContext,
     },
   };
 }
 
-/**
- * Build the KernelContext passed to autonomous phases.
- * This provides a stable interface for ecosystem functions.
- */
 export function buildKernelContext(
   state: RuntimeState,
   envelope: KernelEnvelope,
@@ -120,79 +161,54 @@ export function buildKernelContext(
   };
 }
 
-/**
- * Execute Phase 14 (SIM Core Evolution + Umbrella Intelligence)
- */
 export function executePhase14(state: RuntimeState, context: KernelContext): RuntimeState {
   const evolved = integratePhase14(state, context);
   return {
     ...state,
     simCoreState: (evolved.simCoreState as JsonObject) || state.simCoreState,
-    meta: (evolved.meta as JsonObject) || state.meta,
+    meta: normalizeMeta(evolved.meta, { source: state.meta.source, lane: state.meta.lane }),
     governanceContext: (evolved.governanceContext as JsonObject) || state.governanceContext,
   };
 }
 
-/**
- * Execute Phase 15 (Truth Engine + Knowledge Substrate)
- */
 export function executePhase15(state: RuntimeState, context: KernelContext): RuntimeState {
   const evolved = integratePhase15(state, context);
   return {
     ...state,
-    meta: (evolved.meta as JsonObject) || state.meta,
+    meta: normalizeMeta(evolved.meta, { source: state.meta.source, lane: state.meta.lane }),
     storage: (evolved.storage as JsonObject) || state.storage,
   };
 }
 
-/**
- * Execute Phase 16 (Planetary Mesh + Identity Propagation)
- */
 export function executePhase16(state: RuntimeState, context: KernelContext): RuntimeState {
   const evolved = integratePhase16(state, context);
   return {
     ...state,
-    meta: (evolved.meta as JsonObject) || state.meta,
+    meta: normalizeMeta(evolved.meta, { source: state.meta.source, lane: state.meta.lane }),
     governanceContext: (evolved.governanceContext as JsonObject) || state.governanceContext,
   };
 }
 
-/**
- * Execute Phase 17 (Quantum State + Market Modal)
- */
 export function executePhase17(state: RuntimeState, context: KernelContext): RuntimeState {
   const evolved = integratePhase17(state, context);
   return {
     ...state,
-    meta: (evolved.meta as JsonObject) || state.meta,
+    meta: normalizeMeta(evolved.meta, { source: state.meta.source, lane: state.meta.lane }),
   };
 }
 
-/**
- * Execute Phase 18 (Full Autonomy + Collapse Stabilization)
- */
 export function executePhase18(state: RuntimeState, context: KernelContext): RuntimeState {
   const evolved = integratePhase18(state, context);
   return {
     ...state,
     simCoreState: (evolved.simCoreState as JsonObject) || state.simCoreState,
     identity: (evolved.identity as JsonObject) || state.identity,
-    meta: (evolved.meta as JsonObject) || state.meta,
+    meta: normalizeMeta(evolved.meta, { source: state.meta.source, lane: state.meta.lane }),
     governanceContext: (evolved.governanceContext as JsonObject) || state.governanceContext,
     storage: (evolved.storage as JsonObject) || state.storage,
   };
 }
 
-/**
- * Execute autonomous phases based on mode.
- * Sequences phases 14-18 through RuntimeState, enriching meta and governance.
- *
- * @param result The KernelResult from lane execution
- * @param envelope The original kernel envelope
- * @param governance The umbrella governance context
- * @param autonomyMode Which phases to execute
- * @returns Evolved result with autonomous layers integrated
- */
 export function evolveKernelResult(
   result: KernelResult,
   envelope: KernelEnvelope,
@@ -208,25 +224,19 @@ export function evolveKernelResult(
   const phases: string[] = [];
   let evolved = runtimeState;
 
-  // Phase 14: SIM Core Evolution + Umbrella Intelligence
   evolved = executePhase14(evolved, context);
   phases.push("phase-14-sim-core-evolution");
 
-  // Phase 15: Truth Engine + Knowledge Substrate
   evolved = executePhase15(evolved, context);
   phases.push("phase-15-truth-engine");
 
-  // Full mode: continue through phases 16-18
   if (autonomyMode === "full") {
-    // Phase 16: Planetary Mesh + Identity Propagation
     evolved = executePhase16(evolved, context);
     phases.push("phase-16-mesh-federation");
 
-    // Phase 17: Quantum State + Market Modal
     evolved = executePhase17(evolved, context);
     phases.push("phase-17-quantum-structured");
 
-    // Phase 18: Full Autonomy + Collapse Stabilization
     evolved = executePhase18(evolved, context);
     phases.push("phase-18-full-autonomy");
   }
@@ -234,10 +244,6 @@ export function evolveKernelResult(
   return assembleKernelResult(result, evolved, autonomyMode, phases);
 }
 
-/**
- * Validate that an evolved result maintains kernel shape invariants.
- * Used in testing to ensure autonomous layers don't corrupt the result.
- */
 export function validateEvolvedResult(result: KernelResult): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -247,11 +253,23 @@ export function validateEvolvedResult(result: KernelResult): { valid: boolean; e
 
   const body = result.body;
   if (typeof body === "object" && body !== null) {
-    if ((body as JsonObject).meta && typeof (body as JsonObject).meta !== "object") {
+    const meta = (body as JsonObject).meta;
+    if (meta !== undefined && typeof meta !== "object") {
       errors.push("result.body.meta must be object or undefined");
-    }
-    if ((body as JsonObject).autonomy && typeof (body as JsonObject).autonomy !== "object") {
-      errors.push("result.body.meta.autonomy must be object or undefined");
+    } else if (meta && typeof meta === "object") {
+      const metaRecord = meta as JsonObject;
+      if (typeof metaRecord.source !== "string") errors.push("result.body.meta.source must be string");
+      if (typeof metaRecord.lane !== "string") errors.push("result.body.meta.lane must be string");
+      if (metaRecord.autonomy !== undefined) {
+        const autonomy = metaRecord.autonomy as JsonObject;
+        if (typeof autonomy.mode !== "string") errors.push("result.body.meta.autonomy.mode must be string");
+        if (!Array.isArray(autonomy.phasesExecuted)) {
+          errors.push("result.body.meta.autonomy.phasesExecuted must be an array");
+        }
+        if (typeof autonomy.timestamp !== "number") {
+          errors.push("result.body.meta.autonomy.timestamp must be a number");
+        }
+      }
     }
   }
 
