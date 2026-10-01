@@ -276,9 +276,9 @@ export type InferenceRecommendation = {
   probability: number;
   curvature: number;
   signature: string;
-}>;
+};
 
-export type PlanetaryQuantumState = Readonly<{
+export type PlanetaryQuantumStateExtended = Readonly<{
   branches: ReadonlyArray<QuantumBranch>;
   globalCurvature: number;
   globalSignature: string;
@@ -286,14 +286,14 @@ export type PlanetaryQuantumState = Readonly<{
   selectedBranch: QuantumBranch | null;
 }>;
 
-export type PlanetaryCanon = Readonly<{
+export type PlanetaryCanonExtended = Readonly<{
   truths: Readonly<Record<string, InstituteTruth>>;
   version: number;
   updatedAt: number;
   globalStability: number;
 }>;
 
-export type PlanetaryNodeSnapshot = Readonly<{
+export type PlanetaryNodeSnapshotExtended = Readonly<{
   nodeId: string;
   tick?: number;
   identities: ReadonlyArray<PlanetaryIdentity>;
@@ -304,7 +304,7 @@ export type PlanetaryNodeSnapshot = Readonly<{
   inferenceDelta?: Readonly<Record<string, unknown>>;
 }>;
 
-export type PlanetaryNode = Readonly<{
+export type PlanetaryNodeExtended = Readonly<{
   nodeId: string;
   tick: number;
   identities: ReadonlyArray<PlanetaryIdentity>;
@@ -336,22 +336,22 @@ export type PlanetarySyncPacket = Readonly<{
   signature: string;
 }>;
 
-export type PlanetarySynchronization = Readonly<{
+export type PlanetarySynchronizationExtended = Readonly<{
   at: number;
   coordinatorIdentity: string;
   nodes: ReadonlyArray<PlanetaryNodeSnapshot>;
   governance: PlanetaryGovernanceContext;
-  collapsePolicy: PlanetaryQuantumState["collapsePolicy"];
+  collapsePolicy: PlanetaryQuantumStateExtended["collapsePolicy"];
 }>;
 
-export type PlanetaryState = Readonly<{
+export type PlanetaryStateExtended = Readonly<{
   globalTick: number;
-  nodes: Readonly<Record<string, PlanetaryNode>>;
+  nodes: Readonly<Record<string, PlanetaryNodeExtended>>;
   identities: Readonly<Record<string, PlanetaryIdentity>>;
   substrates: Readonly<Record<string, PlanetarySubstrate>>;
   substrate: PlanetarySubstrate;
-  quantum: PlanetaryQuantumState;
-  canon: PlanetaryCanon;
+  quantum: PlanetaryQuantumStateExtended;
+  canon: PlanetaryCanonExtended;
   governance: PlanetaryGovernanceContext;
   coordinatorIdentity: string;
   synchronizedAt: number;
@@ -359,6 +359,6 @@ export type PlanetaryState = Readonly<{
   advisories: ReadonlyArray<string>;
 }>;
 
-export type PlanetaryRuntimeState = PlanetaryState;
+export type PlanetaryRuntimeState = PlanetaryStateExtended;
 
 export type PlanetaryExecutionState = PlanetaryRuntimeState;
