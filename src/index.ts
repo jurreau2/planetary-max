@@ -6,6 +6,8 @@ import { isRecord } from './contracts';
 import { callKernel } from './kernel-bridge';
 import { KernelEngine } from './kernel-engine';
 
+type JsonObject = Record<string, unknown>;
+
 type UmbrellaOperation =
   | 'identity.physics.license'
   | 'governance.engine.license'
@@ -17,6 +19,14 @@ type UmbrellaOperation =
   | 'structural.truth.license';
 
 const app = new Hono<{ Bindings: Bindings }>();
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return isRecord(value);
+}
+
+function invalidJson(message: string): Response {
+  return errorResponse(400, 'INVALID_JSON', message);
+}
 
 app.use(
   '*',
@@ -52,6 +62,7 @@ app.post('/api/kernel/message', async (c) => {
   if (!isRecord(body) || typeof body.type !== 'string') {
     return errorResponse(400, 'INVALID_MESSAGE', 'type and object payload are required');
   }
+
   const payload = body.payload === undefined ? {} : body.payload;
   if (!isRecord(payload)) {
     return errorResponse(400, 'INVALID_MESSAGE', 'type and object payload are required');
@@ -62,14 +73,19 @@ app.post('/api/kernel/message', async (c) => {
     payload,
     identity,
     isJsonObject(body.governanceContext) ? body.governanceContext : {},
-    typeof body.id === 'string' && body.id.trim() !== '' ? body.id : undefined,
+    typeof body.id === 'string' && body.id.trim() !== '' ? body.id : crypto.randomUUID(),
   );
+
   return kernelResponse(c.env, envelope);
 });
 
 app.post('/os/kernel/message', async (context) => {
   const identity = bearerToken(context.req.header('Authorization'));
-  if (!identity) return unauthenticated();
+  if (!identity) return unauthenticatedResponse();
+
+  const payload: JsonObject = {};
+  return kernelResponse(context.env, createEnvelope('os.kernel.message', payload, identity, { surface: 'worker-api' }), true);
+});
 
 const umbrellaRoutes: Array<[string, UmbrellaOperation]> = [
   ['/umbrella/identity/license', 'identity.physics.license'],
@@ -91,20 +107,22 @@ for (const [path, type] of umbrellaRoutes) {
 app.post('/universe/tick', async (context) => {
   let payload: JsonObject = {};
   const contentType = context.req.header('Content-Type') ?? '';
+
   if (contentType.includes('application/json')) {
     let body: unknown;
     try {
       body = await context.req.json();
-      if (!isRecord(body)) {
-        return errorResponse(400, 'INVALID_JSON', 'Tick payload must be an object');
-      }
-      payload = body;
     } catch {
       return errorResponse(400, 'INVALID_JSON', 'Request body must be JSON');
+    }
+
+    if (!isRecord(body)) {
+      return errorResponse(400, 'INVALID_JSON', 'Tick payload must be an object');
     }
     if (!isJsonObject(body)) return invalidJson('Tick payload must be an object');
     payload = body;
   }
+
   return normalizedRequest(context.env, context.req.header('Authorization'), 'universe.tick', payload);
 });
 
@@ -134,6 +152,7 @@ async function umbrellaRequest(
   } catch {
     return errorResponse(400, 'INVALID_JSON', 'Umbrella payload must be JSON');
   }
+
   if (!isRecord(payload)) {
     return errorResponse(400, 'INVALID_JSON', 'Umbrella payload must be an object');
   }
@@ -192,6 +211,7 @@ export function normalizeResponse(
 export function extractLaneData(response: unknown): unknown {
   if (!isRecord(response)) return {};
   if ('output' in response) return response.output;
+
   const results = response.results;
   if (Array.isArray(results) && isRecord(results[0]) && 'data' in results[0]) return results[0].data;
 
@@ -262,6 +282,7 @@ export class PortalKernel {
       umbrellaEnforcement: this.umbrellaEnforcement,
       storage: this.storage,
     });
+
     const result = await engine.dispatch(envelope);
     return Response.json(result, { status: result.ok ? 200 : kernelErrorStatus(result.error?.code) });
   }
