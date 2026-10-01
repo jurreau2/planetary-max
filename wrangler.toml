@@ -1,9 +1,9 @@
-name = "max-os-1"
+name = "planetary-max"
 main = "src/index.ts"
 compatibility_date = "2024-10-01"
 
 # -----------------------------
-# KV NAMESPACES (REPLACES R2)
+# KV NAMESPACE (REQUIRED)
 # -----------------------------
 [[kv_namespaces]]
 binding = "MAXOS_STATE"
@@ -24,7 +24,6 @@ RETRY_BASE_DELAY_MS = "50"
 CIRCUIT_FAILURE_THRESHOLD = "5"
 CIRCUIT_COOLDOWN_MS = "30000"
 
-# Autonomy routing
 AUTONOMY_ENABLED = "true"
 AUTONOMY_MODE = "full"
 
