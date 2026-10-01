@@ -481,10 +481,225 @@ export function integratePhase18(state: JsonObject = {}, context: KernelContext 
   };
 }
 
+export type AutonomyMode = "off" | "core" | "full";
+
+const normalizeAutonomyMode = (value: JsonValue | undefined): AutonomyMode => {
+  if (value === "off" || value === "core" || value === "full") return value;
+  return "off";
+};
+
+const getAutonomyPhases = (value: JsonValue | undefined): number[] => {
+  const fallback = [14, 15, 16, 17, 18];
+  if (!Array.isArray(value)) return fallback;
+  const phases = value
+    .map((entry) => Number(entry))
+    .filter((entry) => Number.isFinite(entry));
+  return phases.length > 0 ? phases : fallback;
+};
+
+export function evaluateAutonomy(meta: JsonObject): JsonObject {
+  const source = typeof meta.source === "string" ? meta.source : "kernel";
+  const lane = typeof meta.lane === "string" ? meta.lane : "sim";
+  const autonomy = normalizeAutonomyMode(meta.autonomy as JsonValue | undefined);
+  const phases = getAutonomyPhases((asObject(meta.autonomyState) as JsonObject).phases);
+  const score = scoreAutonomy(meta);
+
+  return {
+    source,
+    lane,
+    autonomy,
+    phases,
+    score,
+    stable: autonomy !== "off" && phases.length >= 3,
+    evaluatedAt: Date.now(),
+  };
+}
+
+export function scoreAutonomy(meta: JsonObject): number {
+  const mode = normalizeAutonomyMode(meta.autonomy as JsonValue | undefined);
+  const phases = getAutonomyPhases((asObject(meta.autonomyState) as JsonObject).phases);
+  const phaseWeight = phases.length === 0 ? 0 : Math.min(phases.length / 5, 1);
+  const modeWeight = mode === "off" ? 0.2 : mode === "core" ? 0.6 : 0.95;
+  const sourceWeight = typeof meta.source === "string" ? 0.15 : 0;
+  const laneWeight = typeof meta.lane === "string" ? 0.1 : 0;
+
+  return Number(Math.min(1, phaseWeight + modeWeight + sourceWeight + laneWeight).toFixed(3));
+}
+
+export function captureEvolutionTrace(result: { meta?: JsonObject }): JsonObject {
+  const meta = asObject(result.meta);
+  const phases = getAutonomyPhases((asObject(meta.autonomyState) as JsonObject).phases);
+  const ordered = [...phases].sort((a, b) => a - b);
+
+  return {
+    phases,
+    ordered,
+    isOrdered: JSON.stringify(phases) === JSON.stringify(ordered),
+    capturedAt: Date.now(),
+  };
+}
+
+export function checkMetaConsistency(meta: JsonObject): JsonObject {
+  const required = ["source", "lane", "autonomy", "timestamp", "autonomyState"];
+  const missing = required.filter((field) => meta[field] === undefined || meta[field] === null);
+  const autonomyState = asObject(meta.autonomyState);
+  const phases = getAutonomyPhases(autonomyState.phases);
+  const mode = normalizeAutonomyMode(meta.autonomy as JsonValue | undefined);
+  const lane = typeof meta.lane === "string" ? meta.lane : "unknown";
+  const source = typeof meta.source === "string" ? meta.source : "unknown";
+
+  return {
+    valid: missing.length === 0 && phases.length > 0 && (mode === "off" || mode === "core" || mode === "full"),
+    missing,
+    mode,
+    source,
+    lane,
+    phases,
+    timestamp: typeof meta.timestamp === "number" ? meta.timestamp : null,
+    requiredFields: [...required],
+    preserved: {
+      source,
+      lane,
+      autonomy: mode,
+      timestamp: typeof meta.timestamp === "number" ? meta.timestamp : null,
+    },
+  };
+}
+
+export function refineAutonomyMode(meta: JsonObject): AutonomyMode {
+  const consistency = asObject(meta.consistency);
+  const score = typeof meta.autonomyScore === "number" ? meta.autonomyScore : scoreAutonomy(meta);
+  const mode = normalizeAutonomyMode(meta.autonomy as JsonValue | undefined);
+  const phases = getAutonomyPhases((asObject(meta.autonomyState) as JsonObject).phases);
+  const isConsistent = consistency.valid === true;
+
+  if (isConsistent && score >= 0.8 && phases.length >= 5) return "full";
+  if (isConsistent && score >= 0.45 && phases.length >= 3) return "core";
+  if (mode === "full" && score >= 0.7) return "full";
+  if (mode === "core" && score >= 0.35) return "core";
+  return "off";
+}
+
+export function applySelfFeedback(result: { meta?: JsonObject; ok?: boolean }): JsonObject {
+  const meta = asObject(result.meta);
+  const mode = normalizeAutonomyMode(meta.autonomy as JsonValue | undefined);
+  const score = typeof meta.autonomyScore === "number" ? meta.autonomyScore : scoreAutonomy(meta);
+  const consistent = asObject(meta.consistency).valid === true;
+
+  const feedback = {
+    accepted: Boolean(result.ok !== false),
+    mode,
+    score,
+    consistent,
+    recommendedMode: mode === "full" && score >= 0.8 ? "full" : mode === "core" && score >= 0.45 ? "core" : "off",
+    appliedAt: Date.now(),
+  };
+
+  return {
+    ...feedback,
+    maintainedShape: true,
+  };
+}
+
+export function integratePhase19(state: JsonObject = {}, context: KernelContext = {}): JsonObject {
+  const nextMeta = asObject(state.meta);
+  const autonomyState = asObject(nextMeta.autonomyState);
+  const phases = getAutonomyPhases(autonomyState.phases);
+  const source = typeof nextMeta.source === "string" ? nextMeta.source : "kernel";
+  const lane = typeof nextMeta.lane === "string" ? nextMeta.lane : "sim";
+  const autonomy = normalizeAutonomyMode(nextMeta.autonomy as JsonValue | undefined);
+  const timestamp = typeof nextMeta.timestamp === "number" ? nextMeta.timestamp : Date.now();
+
+  const baseMeta: JsonObject = {
+    ...nextMeta,
+    source,
+    lane,
+    autonomy,
+    timestamp,
+    autonomyState: {
+      ...autonomyState,
+      phases,
+    },
+  };
+
+  const evaluation = evaluateAutonomy(baseMeta);
+  const trace = captureEvolutionTrace({ meta: baseMeta });
+  const consistency = checkMetaConsistency(baseMeta);
+  const refined = refineAutonomyMode({
+    ...baseMeta,
+    autonomyScore: evaluation.score,
+    consistency,
+  });
+  const feedback = applySelfFeedback({
+    ok: consistency.valid,
+    meta: {
+      ...baseMeta,
+      autonomyScore: evaluation.score,
+      consistency,
+    },
+  });
+
+  return {
+    ...state,
+    meta: {
+      ...baseMeta,
+      self: {
+        evaluation,
+        score: evaluation.score,
+        trace,
+        consistency,
+        refined,
+        feedback,
+      },
+    },
+  };
+}
+
 export function completeUmbrellaEcosystem(state: JsonObject = {}, context: KernelContext = {}): JsonObject {
   const after14 = integratePhase14(state, context);
   const after15 = integratePhase15(after14, context);
   const after16 = integratePhase16(after15, context);
   const after17 = integratePhase17(after16, context);
-  return integratePhase18(after17, context);
+  const after18 = integratePhase18(after17, context);
+  return integratePhase19(after18, context);
 }
+
+export default {
+  simCoreEvolution,
+  simCorePredict,
+  computeCurvatureFeedback,
+  resolveUmbrellaIntelligence,
+  telemetryPredict,
+  truthEngineEvaluate,
+  knowledgeIndex,
+  knowledgeQuery,
+  identityCanonUpdate,
+  meshRoute,
+  propagateIdentityAcrossKernels,
+  resolveGlobalUmbrellaField,
+  quantumStateInitialize,
+  quantumStateStep,
+  blueResolve,
+  marketModalEvaluate,
+  simCoreAutonomous,
+  identityAutonomous,
+  umbrellaSelfCorrect,
+  stabilizeCollapseVector,
+  patternIndexAutonomous,
+  integratePhase14,
+  integratePhase15,
+  integratePhase16,
+  integratePhase17,
+  integratePhase18,
+  integratePhase19,
+  completeUmbrellaEcosystem,
+  evaluateAutonomy,
+  scoreAutonomy,
+  captureEvolutionTrace,
+  checkMetaConsistency,
+  refineAutonomyMode,
+  applySelfFeedback,
+};
+
+// End of file
+
