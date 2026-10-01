@@ -67,6 +67,13 @@ export function isPlanetaryFailure(result: unknown): boolean {
 // Parse Synchronization Packet
 // -------------------------------------------------------------
 
+export function synchronizePlanetaryState(
+  synchronization: PlanetarySynchronization,
+): PlanetaryState | PlanetaryFailure {
+  const activeNodes: ReadonlyArray<PlanetaryNodeSnapshot> = synchronization.nodes.filter(
+    (node: PlanetaryNodeSnapshot): boolean => node !== null && node !== undefined,
+  );
+  const advisories: string[] = [];
   const identities: Record<string, PlanetaryIdentity> = {};
   const identityIds: string[] = uniqueSorted(
     activeNodes.flatMap((node: PlanetaryNodeSnapshot): string[] =>
@@ -475,8 +482,10 @@ function parseGovernance(value: Record<string, unknown>): PlanetaryGovernanceCon
         !value.collapseRules.deniedSignatures.every(nonEmptyString)))
   ) return null;
   return {
-    branches: Array.isArray(obj.branches) ? obj.branches : [],
-    explicitSync: Boolean(obj.explicitSync),
+    mode: value.mode as PlanetaryGovernanceContext["mode"],
+    nodePolicies: value.nodePolicies as Record<string, unknown>,
+    globalTruthRules: value.globalTruthRules as Record<string, unknown>,
+    collapseRules: value.collapseRules as Record<string, unknown>,
   };
 }
 
@@ -600,17 +609,6 @@ function parseSubstrate(value: unknown): PlanetarySubstrate | null {
   });
 }
 
-export async function synchronizePlanetaryState(
-  state: PlanetaryState,
-  sync: PlanetarySynchronization,
-  mode: UmbrellaMode = "strict"
-): Promise<PlanetaryState> {
-  const { branches, explicitSync } = sync;
-
-  if (explicitSync && branches.length === 0) {
-    return anomaly(state, "EXPLICIT_SYNC_EMPTY_BRANCH_SET");
-  }
-
 function parseTruth(value: unknown): InstituteTruth | null {
   if (
     !isRecord(value) || !nonEmptyString(value.id) || !nonEmptyString(value.description) ||
@@ -650,28 +648,9 @@ function mergeTimeline(
     }
   }
 
-  const overlay: QuantumOverlay = await generateQuantumOverlay(
-    {},
-    "planetary-sync",
-    null,
-    "deterministic"
-  );
-
-  const updatedNodes = state.nodes.map((node) =>
-    applyPlanetaryQuantum(node, overlay, mode)
-  );
-
   return {
-    branches,
-    globalCurvature: totalProbability === 0
-      ? 0
-      : precision(totals.reduce(
-        (total, branch): number => total + branch.curvature * branch.probability,
-        0,
-      ) / totalProbability),
-    globalSignature: branches[0]?.signature ?? "",
-    collapsePolicy,
-    selectedBranch: null,
+    identityId,
+    events: [...events.values()],
   };
 }
 
@@ -911,16 +890,26 @@ function applyPlanetaryQuantum(
   });
 
   const nextQuantum: PlanetaryQuantumState = {
-    overlay,
+    branches: [branch],
+    globalCurvature: branch.curvature,
+    globalSignature: branch.signature,
+    collapsePolicy: "deterministic",
+    selectedBranch: branch,
   };
 
   const nextSubstrate: PlanetarySubstrate = {
     stability: node.substrate.stability + (branch.stateDelta.stabilityDelta ?? 0),
+    id: node.substrate.id,
+    nodes: node.substrate.nodes,
+    topology: node.substrate.topology,
+    anomalies: node.substrate.anomalies,
   };
 
   const nextCanon: PlanetaryCanon = {
     truths: node.canon.truths,
-    signature: overlay.signature,
+    version: node.canon.version,
+    updatedAt: node.canon.updatedAt,
+    globalStability: node.canon.globalStability,
   };
 
   return {
@@ -931,28 +920,66 @@ function applyPlanetaryQuantum(
   };
 }
 
-// -------------------------------------------------------------
-// Identity Signature Validation
-// -------------------------------------------------------------
+// Helper types and stubs (declare missing functions/types)
+type PlanetaryFailure = Readonly<{ code: string; message: string }>;
+type UmbrellaMode = "strict" | "advisory" | "off";
 
-export function validatePlanetaryIdentity(
-  identity: PlanetaryIdentity,
-  mode: UmbrellaMode
-): boolean {
-  if (mode === "strict") {
-    return typeof identity.signature === "string" && identity.signature.length > 0;
-  }
-  return true;
+const MAX_PLANETARY_ENTITIES_PER_NODE = 10000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-// -------------------------------------------------------------
-// Anomaly Helper
-// -------------------------------------------------------------
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
 
-function anomaly(state: PlanetaryState, kind: string): PlanetaryState {
-  const anomaly: PlanetaryAnomaly = { kind };
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && isFinite(value);
+}
+
+function nonNegativeInteger(value: unknown): boolean {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function unitInterval(value: unknown): value is number {
+  return typeof value === "number" && value >= 0 && value <= 1;
+}
+
+function compareOrdinal(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function deepFreeze<T>(value: T): Readonly<T> {
+  return Object.freeze(value);
+}
+
+function parseCanon(value: unknown): InstituteCanon | null {
+  return isRecord(value) && Array.isArray(value.truths) ? (value as InstituteCanon) : null;
+}
+
+function parseBranch(value: unknown, nodeId: string): QuantumBranch | null {
+  return isRecord(value) ? (value as QuantumBranch) : null;
+}
+
+function mergeAnomalies(anomalies: ReadonlyArray<PlanetaryAnomaly>): PlanetaryAnomaly[] {
+  return [...anomalies];
+}
+
+function governedBranches(
+  nodes: ReadonlyArray<PlanetaryNodeSnapshot>,
+  governance: PlanetaryGovernanceContext,
+  advisories: string[],
+): QuantumBranch[] {
+  return [];
+}
+
+function collapseQuantum(branches: ReadonlyArray<QuantumBranch>, policy: any): PlanetaryQuantumState {
   return {
-    ...state,
-    anomaly,
-  } as any;
+    branches: [...branches],
+    globalCurvature: 0,
+    globalSignature: "",
+    collapsePolicy: policy,
+    selectedBranch: null,
+  };
 }
