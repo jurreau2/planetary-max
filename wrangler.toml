@@ -2,6 +2,16 @@ name = "planetary-max"
 main = "src/index.ts"
 compatibility_date = "2026-09-17"
 
+# -----------------------------
+# KV NAMESPACE (YOUR PROVIDED ID)
+# -----------------------------
+[[kv_namespaces]]
+binding = "planetary-max-1"
+id = "ede711e3c9764df481d63dcc5820b7e7"
+
+# -----------------------------
+# ENVIRONMENT VARIABLES
+# -----------------------------
 [vars]
 PLANETARY_MODE = "single"
 UMBRELLA_ENFORCEMENT = "strict"
@@ -19,5 +29,8 @@ new_sqlite_classes = ["PortalKernel"]
 binding = "MAX_OS_1"
 service = "max-os-1"
 
+# -----------------------------
+# BUILD CONFIG
+# -----------------------------
 [build]
 command = "npm run build"
