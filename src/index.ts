@@ -44,7 +44,7 @@ app.post('/api/kernel/message', async (c) => {
 
   let body: unknown;
   try {
-    body = await context.req.json();
+    body = await c.req.json();
   } catch {
     return errorResponse(400, 'INVALID_JSON', 'Request body must be JSON');
   }
@@ -94,7 +94,7 @@ app.post('/universe/tick', async (context) => {
   if (contentType.includes('application/json')) {
     let body: unknown;
     try {
-      const body: unknown = await c.req.json();
+      body = await context.req.json();
       if (!isRecord(body)) {
         return errorResponse(400, 'INVALID_JSON', 'Tick payload must be an object');
       }
