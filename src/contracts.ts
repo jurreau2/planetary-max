@@ -4,6 +4,8 @@ export type KernelEnvelope = {
   payload: Record<string, unknown>;
   identity: string;
   governanceContext: Record<string, unknown>;
+  lane?: string;
+  governance?: Record<string, unknown> | null;
 };
 
 export type KernelService = {
@@ -49,5 +51,5 @@ export type KernelResult = {
 };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
