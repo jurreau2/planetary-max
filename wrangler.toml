@@ -16,21 +16,13 @@ id = "ede711e3c9764df481d63dcc5820b7e7"
 PLANETARY_MODE = "single"
 UMBRELLA_ENFORCEMENT = "strict"
 
-[durable_objects]
-bindings = [
-  { name = "PORTAL_KERNEL", class_name = "PortalKernel" }
-]
+[[durable_objects.bindings]]
+name = "PORTAL_KERNEL"
+class_name = "PortalKernel"
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PortalKernel"]
 
-[[services]]
-binding = "MAX_OS_1"
-service = "max-os-1"
-
-# -----------------------------
-# BUILD CONFIG
-# -----------------------------
 [build]
 command = "npm run build"
