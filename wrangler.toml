@@ -1,29 +1,20 @@
-name = "planetary-max"
+name = "max-os-1"
 main = "src/index.ts"
-compatibility_date = "2024-09-22"
+compatibility_date = "2024-10-01"
 
+# -----------------------------
+# KV NAMESPACES (REPLACES R2)
+# -----------------------------
 [[kv_namespaces]]
 binding = "MAXOS_STATE"
-id = "fe764b50bd0740fd9bc37d235d8b0327"
+id = "<YOUR_KV_NAMESPACE_ID>"
 
-[[services]]
-binding = "MAX_OS_1"
-service = "max-os-1"
-
-[durable_objects]
-bindings = [
-  { name = "PORTAL_KERNEL", class_name = "PortalKernel" }
-]
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["PortalKernel"]
-
+# -----------------------------
+# ENVIRONMENT VARIABLES
+# -----------------------------
 [vars]
 PLANETARY_MODE = "active"
-UMBRELLA_ENFORCEMENT = "strict"
-IDENTITY_JWT_ISSUER = "portal-login"
-IDENTITY_JWT_AUDIENCE = "planetary-max"
+UMBRELLA_ENFORCEMENT = "enabled"
 MAX_OS_VERSION = "1"
 PORTAL_OS_PHASE = "11"
 KERNEL_TIMEOUT_MS = "5000"
@@ -32,5 +23,13 @@ MAX_RETRY_ATTEMPTS = "3"
 RETRY_BASE_DELAY_MS = "50"
 CIRCUIT_FAILURE_THRESHOLD = "5"
 CIRCUIT_COOLDOWN_MS = "30000"
-AUTONOMY_MODE = "core"
+
+# Autonomy routing
 AUTONOMY_ENABLED = "true"
+AUTONOMY_MODE = "full"
+
+# -----------------------------
+# BUILD CONFIG
+# -----------------------------
+[build]
+command = "npm run build"
