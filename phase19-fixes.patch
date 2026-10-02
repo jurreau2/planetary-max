@@ -1,0 +1,51 @@
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -6,7 +6,6 @@
+ export type {
+   JsonPrimitive,
+   JsonValue,
+-  JsonObject,
+   IdentityEnvelope,
+   GovernanceRule,
+   GovernanceEnvelope,
+
+--- a/src/inference.ts
++++ b/src/inference.ts
+@@ -10,9 +10,8 @@ export function extractFactsFromKernel(kernel: KernelResult): InferenceFact[] {
+ 
+   if (kernel.governance) {
+     facts.push({
+       id: "governance-mode",
+-      kind: "governance",
+-      payload: kernel.governance.mode,
++      content: kernel.governance.mode,
++      confidence: 0.9,
+     });
+   }
+ 
+@@ -24,19 +23,20 @@ export function raiseConfidenceFromBehavior(facts: InferenceFact[]): InferenceH
+ 
+   return {
+     id: "behavior-hypothesis",
+-    facts,
++    content: { facts },
++    supportingFacts: facts.map((f) => f.id),
+     confidence,
+   };
+ }
+ 
+ export function recommendSubstrateAdjustment(state: PortalKernelState): InferenceRecommendation {
+   return {
+     id: "substrate-recommendation",
+-    node: "substrate",
+-    probability: 0.8,
+-    curvature: -0.1,
+-    signature: `substrate:${state.substrate.stability}`,
++    content: {
++      node: "substrate",
++      stability: state.stability,
++    },
++    confidence: 0.8,
+   };
+ }
+ 
