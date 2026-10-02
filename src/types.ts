@@ -13,17 +13,31 @@ export type Bindings = Record<string, unknown>;
 export type KernelLane = "sim" | "identity" | "windows" | "tec" | "umbrella";
 
 export type KernelEnvelope = {
-  lane: KernelLane;
-  payload: unknown;
+  id?: string;
+  type?: string;
+  lane?: KernelLane;
+  payload?: unknown;
   identity?: string | null;
   governance?: GovernanceMetadata | null;
+  governanceContext?: Record<string, unknown>;
 };
 
 export type KernelResult = {
   ok: boolean;
-  status: number;
-  body: unknown;
+  status?: number;
+  body?: unknown;
   governance?: GovernanceMetadata | null;
+  messageId?: unknown;
+  type?: unknown;
+  identity?: unknown;
+  route?: unknown;
+  result?: {
+    lanes?: Array<{ result?: { results?: Array<{ result?: { data?: unknown } }> } }>;
+    [key: string]: unknown;
+  };
+  error?: { code?: string; message?: string };
+  meta?: Record<string, unknown>;
+  [key: string]: unknown;
 };
 
 export type PortalKernelState = {
@@ -107,6 +121,8 @@ export type QuantumBranch = {
   probability: number;
   stateDelta: Readonly<Record<string, unknown>>;
   signature: string;
+  curvature?: number;
+  node?: string;
 };
 
 export type QuantumCollapsePolicy =
@@ -138,42 +154,94 @@ export type QuantumState = {
 
 export type PlanetaryIdentity = {
   id: string;
+  originNode?: string;
+  curvature?: number;
   signature: string;
+  timeline?: { identityId?: string; events?: EpistemicEvent[] };
+};
+
+export type PlanetaryNode = {
+  nodeId: string;
+  tick: number;
+  identities: PlanetaryIdentity[];
+  substrates: PlanetarySubstrate[];
+  quantumBranches: QuantumBranch[];
+  canon: InstituteCanon;
+  truthSignatures: Record<string, string>;
+  inferenceDelta?: Record<string, unknown>;
 };
 
 export type PlanetaryNodeSnapshot = {
-  id: string;
-  identity: PlanetaryIdentity;
-  quantum: PlanetaryQuantumState;
-  substrate: PlanetarySubstrate;
-  canon: PlanetaryCanon;
+  id?: string;
+  nodeId?: string;
+  tick?: number;
+  identity?: PlanetaryIdentity;
+  identities?: PlanetaryIdentity[];
+  quantum?: PlanetaryQuantumState;
+  quantumBranches?: QuantumBranch[];
+  substrate?: PlanetarySubstrate;
+  substrates?: PlanetarySubstrate[];
+  canon?: PlanetaryCanon;
+  truthSignatures?: Record<string, string>;
+  inferenceDelta?: Record<string, unknown>;
 };
 
 export type PlanetaryQuantumState = {
-  overlay: QuantumOverlay | null;
+  overlay?: QuantumOverlay | null;
+  branches?: QuantumBranch[];
+  globalCurvature?: number;
+  globalSignature?: string;
+  collapsePolicy?: QuantumCollapsePolicy;
+  selectedBranch?: QuantumBranch | null;
 };
 
 export type PlanetarySubstrate = {
+  id?: string;
+  nodeId?: string;
   stability: number;
+  topology?: Record<string, unknown>;
+  anomalies?: PlanetaryAnomaly[];
+  nodes?: string[];
 };
 
 export type PlanetaryCanon = {
   truths: InstituteTruth[];
   signature: string;
+  version?: number;
+  updatedAt?: number;
+  globalStability?: number;
 };
 
 export type PlanetaryGovernanceContext = {
   mode: UmbrellaMode;
   reason?: string;
+  nodePolicies?: Record<string, unknown>;
+  globalTruthRules?: Record<string, unknown>;
+  collapseRules?: Record<string, unknown>;
 };
 
 export type PlanetaryState = {
   nodes: PlanetaryNodeSnapshot[];
+  identities?: Record<string, PlanetaryIdentity>;
+  substrate?: PlanetarySubstrate;
+  substrates?: Record<string, PlanetarySubstrate>;
+  quantum?: PlanetaryQuantumState;
+  canon?: PlanetaryCanon;
+  governance?: PlanetaryGovernanceContext;
+  advisories?: string[];
+  globalTick?: number;
+  synchronizedAt?: number;
+  packetSignature?: string;
 };
 
 export type PlanetarySynchronization = {
-  branches: QuantumBranch[];
-  explicitSync: boolean;
+  at?: number;
+  coordinatorIdentity?: string;
+  nodes: PlanetaryNodeSnapshot[];
+  governance?: PlanetaryGovernanceContext;
+  collapsePolicy?: PlanetaryQuantumState["collapsePolicy"];
+  branches?: QuantumBranch[];
+  explicitSync?: boolean;
 };
 
 export type PlanetaryAnomaly = {
@@ -196,6 +264,9 @@ export type EpistemicEvent = {
   action: EpistemicEventAction;
   payload: unknown;
   time: number;
+  truthId?: string;
+  at?: number;
+  meta?: Record<string, unknown>;
 };
 
 export type EpistemicTimeline = EpistemicEvent[];
@@ -223,6 +294,9 @@ export type InstituteTruth = {
   updatedAt: number;
   payload: unknown;
   stability: number;
+  description?: string;
+  sourceFacts?: string[];
+  curvature?: number;
 };
 
 export type InstituteTruthFormation = {
@@ -233,6 +307,9 @@ export type InstituteTruthFormation = {
 export type InstituteCanon = {
   truths: InstituteTruth[];
   signature: string;
+  version?: number;
+  updatedAt?: number;
+  globalStability?: number;
 };
 
 export type InstituteState = {
@@ -272,10 +349,12 @@ export type InferenceRecommendationTarget =
 
 export type InferenceRecommendation = {
   id: string;
-  node: string;
-  probability: number;
-  curvature: number;
-  signature: string;
+  node?: string;
+  target?: InferenceRecommendationTarget;
+  probability?: number;
+  curvature?: number;
+  signature?: string;
+  payload?: Record<string, unknown>;
 };
 
 export type PlanetaryQuantumStateExtended = Readonly<{
