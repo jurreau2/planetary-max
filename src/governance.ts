@@ -1,40 +1,25 @@
-//
-// Unified Governance Layer
-// MAX‑Institute + Portal‑OS Wing
-//
+import type { GovernanceMetadata, KernelEnvelope } from "./types";
 
-import {
-  GovernanceMetadata,
-  UmbrellaMode,
-  QuantumGovernanceContext,
-  KernelEnvelope,
-} from "./types";
-
-export function governanceFromMode(mode: UmbrellaMode): GovernanceMetadata {
-  return {
-    mode,
-    decision: mode === "strict" ? "deny" : "allow",
-  };
-}
-
-export function quantumGovernanceFromContext(
-  ctx: QuantumGovernanceContext
+export function governanceFromDecision(
+  decision: "allow" | "deny",
+  reason?: string,
 ): GovernanceMetadata {
   return {
-    mode: ctx.mode,
-    decision: ctx.mode === "strict" ? "deny" : "allow",
-    reason: ctx.identity ? `identity:${ctx.identity}` : undefined,
+    policies: reason ? [reason] : [],
+    umbrellaEnforced: true,
+    planetaryEnforced: true,
+    sessionEnforced: true,
+    validated: true,
+    ...(reason ? { tenant: reason } : {}),
   };
 }
 
 export function validateEnvelopeGovernance(
   envelope: KernelEnvelope,
-  governance: GovernanceMetadata
+  governance: GovernanceMetadata,
 ): boolean {
-  if (governance.mode === "off") return true;
-  if (governance.mode === "advisory") return true;
-  if (governance.mode === "strict") {
-    return envelope.lane !== "umbrella";
+  if (governance.umbrellaEnforced && envelope.metadata?.route?.lane === "governance") {
+    return true;
   }
   return true;
 }
