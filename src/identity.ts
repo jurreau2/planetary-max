@@ -3,11 +3,11 @@
 // MAX‑Institute + Portal‑OS Wing
 //
 
-import { IdentityEnvironment, PlanetaryIdentity } from "./types";
+import type { PlanetaryIdentity } from "./types";
 
 export function deriveIdentityEnvironment(
   identity: PlanetaryIdentity
-): IdentityEnvironment {
+): { id: string; signature: string } {
   return {
     id: identity.id,
     signature: identity.signature,
