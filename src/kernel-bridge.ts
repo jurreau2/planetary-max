@@ -1,6 +1,7 @@
 import type {
   Envelope,
   NormalizedKernelResponse,
+  Bindings,
 } from "./types";
 
 export type KernelExecutionContext = {
@@ -11,6 +12,23 @@ export type KernelExecutionContext = {
   storage: DurableObjectStorage;
 };
 
+export async function callKernel(
+  env: Bindings,
+  envelope: Envelope,
+): Promise<Response> {
+  const kernelService = (env as Record<string, unknown>).KERNEL_SERVICE as unknown;
+  if (!kernelService || typeof kernelService !== 'object' || !('fetch' in kernelService)) {
+    throw new Error('KERNEL_SERVICE binding not available');
+  }
+  return (kernelService as { fetch: (req: Request) => Promise<Response> }).fetch(
+    new Request('http://kernel/api/kernel/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(envelope),
+    }),
+  );
+}
+
 export class KernelEngine {
   private readonly config: Record<string, unknown>;
 
@@ -19,12 +37,12 @@ export class KernelEngine {
   }
 
   async dispatch(envelope: Envelope): Promise<NormalizedKernelResponse> {
-    const lane = envelope.metadata?.route?.lane ?? "sim";
+    const lane = (envelope as Record<string, unknown>).lane as string ?? 'sim';
     return {
       ok: true,
-      messageId: envelope.id,
+      messageId: (envelope as Record<string, unknown>).id as string | undefined,
       status: 200,
-      data: {
+      body: {
         lane,
         envelope,
         config: this.config,
