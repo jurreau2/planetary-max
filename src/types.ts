@@ -6,7 +6,6 @@
 export type {
   JsonPrimitive,
   JsonValue,
-  JsonObject,
   IdentityEnvelope,
   GovernanceRule,
   GovernanceEnvelope,
@@ -85,6 +84,7 @@ export type InferenceHypothesis = {
   id: string;
   content: unknown;
   supportingFacts: string[];
+  confidence?: number;
 };
 
 export type InferenceRecommendation = {
@@ -97,6 +97,7 @@ export type PortalKernelState = {
   identity: PlanetaryIdentity;
   governance: QuantumGovernanceContext;
   timestamp: number;
+  stability?: number;
 };
 
 // Phase-19 Quantum Types
