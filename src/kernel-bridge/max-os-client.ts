@@ -1,3 +1,3 @@
-export async function callKernel(_env: unknown, _envelope: unknown): Promise<Response> {
-  return new Response(JSON.stringify({ ok: true, status: 200, body: {} }), { status: 200, headers: { "Content-Type": "application/json" } });
+export async function callMaxOs(_request: unknown): Promise<{ ok: boolean; status: number }> {
+  return { ok: true, status: 200 };
 }

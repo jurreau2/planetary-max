@@ -1,3 +1,3 @@
-export function refineAutonomy(_input: unknown): number {
-  return 1;
+export function captureTrace(_input: unknown): Record<string, unknown> {
+  return { captured: true };
 }

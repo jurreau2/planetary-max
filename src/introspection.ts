@@ -1,77 +1,199 @@
-export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
-export type JsonObject = { [key: string]: JsonValue };
+import { Hono } from "hono";
 
-export type KernelContext = Readonly<{
-  identity?: Record<string, unknown>;
-  meta?: Record<string, unknown>;
-  governanceContext?: Record<string, unknown>;
-  simCoreState?: Record<string, unknown>;
-  quantumState?: Record<string, unknown>;
-  storage?: Record<string, unknown>;
-  event?: Record<string, unknown>;
-  envelope?: import("./types").KernelEnvelope;
-  input?: unknown;
-}>;
+import type {
+  Bindings,
+  EpistemicTimeline,
+  InstituteCanon,
+  InstituteState,
+  KernelResult,
+  PlanetaryState,
+  QuantumOverlay,
+  SimAgentState,
+  SimSubstrateState,
+  SimTecTaskState,
+  SimWindowState,
+} from "./types";
 
-const asObject = (value: unknown, fallback: Record<string, unknown> = {}): Record<string, unknown> => {
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
+type AuthContext = { authenticated?: boolean };
+
+function requireAuth(ctx: AuthContext): void {
+  if (!ctx.authenticated) {
+    throw new Error("Authentication required");
   }
-  return fallback;
-};
+}
 
-const coerceNumber = (value: unknown, fallback: number): number => {
-  const parsed = Number(value ?? fallback);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
+function introspectionHandler(kind: string) {
+  return (c: any) => c.json({ kind, status: "ok" });
+}
 
-const clampUnit = (value: number): number => Math.min(1, Math.max(0, value));
+export type IntrospectionKind =
+  | "sim.behavior"
+  | "identity.timeline"
+  | "windows.focus"
+  | "windows.state"
+  | "windows.timeline"
+  | "umbrella.enforcement"
+  | "kernel.heatmap"
+  | "tec.pipeline"
+  | "substrate.state"
+  | "messages"
+  | "logs"
+  | "inference"
+  | "institute.canon"
+  | "institute.truths"
+  | "institute.timeline"
+  | "institute.stability"
+  | "institute.signature"
+  | "institute.timelines"
+  | "planetary.identity"
+  | "planetary.substrate"
+  | "planetary.quantum"
+  | "planetary.canon"
+  | "planetary.governance"
+  | "planetary.state";
 
-const average = (...values: number[]): number => {
-  if (values.length === 0) return 0;
-  const total = values.reduce((sum, entry) => sum + entry, 0);
-  return total / values.length;
-};
+export function attachIntrospectionRoutes(app: Hono<{ Bindings: Bindings }>): void {
+  app.get("/api/introspection/sim/behavior", introspectionHandler("sim.behavior"));
+  app.get("/api/introspection/identity/timeline", introspectionHandler("identity.timeline"));
+  app.get("/api/introspection/windows/focus", introspectionHandler("windows.focus"));
+  app.get("/api/introspection/windows/state", introspectionHandler("windows.state"));
+  app.get("/api/introspection/windows/timeline", introspectionHandler("windows.timeline"));
+  app.get("/api/introspection/umbrella/enforcement", introspectionHandler("umbrella.enforcement"));
+  app.get("/api/introspection/kernel/heatmap", introspectionHandler("kernel.heatmap"));
+  app.get("/api/introspection/tec/pipeline", introspectionHandler("tec.pipeline"));
+  app.get("/api/introspection/substrate/state", introspectionHandler("substrate.state"));
+  app.get("/api/introspection/messages", introspectionHandler("messages"));
+  app.get("/api/introspection/logs", introspectionHandler("logs"));
+  app.get("/api/introspection/inference", introspectionHandler("inference"));
+  app.get("/api/introspection/institute/canon", introspectionHandler("institute.canon"));
+  app.get("/api/introspection/institute/truths", introspectionHandler("institute.truths"));
+  app.get("/api/introspection/institute/timeline", introspectionHandler("institute.timeline"));
+  app.get("/api/introspection/institute/stability", introspectionHandler("institute.stability"));
+  app.get("/api/introspection/institute/signature", introspectionHandler("institute.signature"));
+  app.get("/api/introspection/institute/timelines", introspectionHandler("institute.timelines"));
+  app.get("/api/introspection/planetary/identity", introspectionHandler("planetary.identity"));
+  app.get("/api/introspection/planetary/substrate", introspectionHandler("planetary.substrate"));
+  app.get("/api/introspection/planetary/quantum", introspectionHandler("planetary.quantum"));
+  app.get("/api/introspection/planetary/canon", introspectionHandler("planetary.canon"));
+  app.get("/api/introspection/planetary/governance", introspectionHandler("planetary.governance"));
+  app.get("/api/introspection/planetary/state", introspectionHandler("planetary.state"));
+}
 
-export function resolveUmbrellaIntelligence(context: KernelContext): Record<string, unknown> {
-  const governance = asObject(context.governanceContext);
-  const meta = asObject(context.meta);
-  const identity = asObject(context.identity);
-  const simCoreState = asObject(context.simCoreState);
+export function introspectQuantumState(global: Record<string, unknown>, ctx: AuthContext): QuantumOverlay | null {
+  requireAuth(ctx);
+  return (global.quantum as QuantumOverlay) ?? null;
+}
 
-  const mode = typeof governance.mode === "string" ? governance.mode : "strict";
-  const identitySignal = coerceNumber(identity.curvature, 0.5);
-  const simSignal = coerceNumber(simCoreState.confidence, 0.7);
-  const telemetryBias = coerceNumber(meta.telemetryBias, 0.5);
+export function introspectQuantumBranches(global: Record<string, unknown>, ctx: AuthContext) {
+  const overlay = introspectQuantumState(global, ctx);
+  return overlay ? overlay.branches : [];
+}
 
+export function introspectQuantumCurvature(global: Record<string, unknown>, ctx: AuthContext) {
+  const overlay = introspectQuantumState(global, ctx);
+  return overlay ? overlay.curvature : null;
+}
+
+export function introspectQuantumSignature(global: Record<string, unknown>, ctx: AuthContext) {
+  const overlay = introspectQuantumState(global, ctx);
+  return overlay ? overlay.signature : null;
+}
+
+export function introspectSimSubstrate(sim: Record<string, unknown>, ctx: AuthContext): SimSubstrateState | null {
+  requireAuth(ctx);
+  return (sim.substrate as SimSubstrateState) ?? null;
+}
+
+export function introspectSimWindows(sim: Record<string, unknown>, ctx: AuthContext): Record<string, SimWindowState> {
+  requireAuth(ctx);
+  return (sim.windows as Record<string, SimWindowState>) ?? {};
+}
+
+export function introspectSimIdentity(sim: Record<string, unknown>, ctx: AuthContext): Record<string, SimAgentState> {
+  requireAuth(ctx);
+  return (sim.identity as Record<string, SimAgentState>) ?? {};
+}
+
+export function introspectSimTecPipeline(sim: Record<string, unknown>, ctx: AuthContext): Record<string, SimTecTaskState> {
+  requireAuth(ctx);
+  return (sim.tec as Record<string, SimTecTaskState>) ?? {};
+}
+
+export function introspectKernelHeatmap(kernel: KernelResult, ctx: AuthContext) {
+  requireAuth(ctx);
+  return kernel.body ?? null;
+}
+
+export function introspectKernelMessages(kernel: KernelResult, ctx: AuthContext) {
+  requireAuth(ctx);
+  return (kernel.body as any)?.messages ?? [];
+}
+
+export function introspectKernelLogs(kernel: KernelResult, ctx: AuthContext) {
+  requireAuth(ctx);
+  return (kernel.body as any)?.logs ?? [];
+}
+
+export function introspectInferenceArtifacts(kernel: KernelResult, ctx: AuthContext) {
+  requireAuth(ctx);
+  return (kernel.body as any)?.inference ?? null;
+}
+
+export function introspectInstituteCanon(institute: InstituteState, ctx: AuthContext): InstituteCanon {
+  requireAuth(ctx);
+  return institute.canon;
+}
+
+export function introspectInstituteTruths(institute: InstituteState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return institute.canon.truths;
+}
+
+export function introspectInstituteTimeline(institute: InstituteState, ctx: AuthContext): EpistemicTimeline {
+  requireAuth(ctx);
+  return institute.timeline;
+}
+
+export function introspectInstituteStability(institute: InstituteState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return institute.canon.truths.map((truth) => ({
+    id: truth.id,
+    stability: truth.stability,
+  }));
+}
+
+export function introspectInstituteSignature(institute: InstituteState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return institute.canon.signature;
+}
+
+export function introspectInstituteTimelines(institute: InstituteState, ctx: AuthContext) {
+  requireAuth(ctx);
   return {
-    umbrella: {
-      mode,
-      identitySignal,
-      simSignal,
-      telemetryBias,
-      decision: coerceNumber(governance.threshold, 0.6) >= 0.6 ? "allow" : "review",
-    },
-    intelligence: {
-      integrity: clampUnit(average(identitySignal, simSignal, telemetryBias)),
-      source: "umbrella-core",
-      updatedAt: Date.now(),
-    },
+    timeline: institute.timeline,
+    truths: institute.canon.truths,
   };
 }
 
-export function meshRoute(envelope: import("./types").KernelEnvelope): Record<string, unknown> {
-  const lane = envelope.lane ?? "sim";
-  const identity = typeof envelope.identity === "string" ? envelope.identity : "system";
-  const payload = asObject(envelope.payload);
+export function introspectPlanetaryIdentity(planetary: PlanetaryState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return planetary.nodes.map((node) => node.identity ?? { id: "", signature: "" });
+}
 
-  return {
-    route: {
-      lane,
-      identity,
-      destination: lane === "umbrella" ? "governance" : "kernel",
-    },
-    payload,
-    nextStep: "dispatch",
-  };
+export function introspectPlanetarySubstrate(planetary: PlanetaryState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return planetary.nodes.map((node) => node.substrate ?? { stability: 0 });
+}
+
+export function introspectPlanetaryQuantum(planetary: PlanetaryState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return planetary.nodes.map((node) => node.quantum ?? { overlay: null });
+}
+
+export function introspectPlanetaryGovernance(planetary: PlanetaryState, ctx: AuthContext) {
+  requireAuth(ctx);
+  return planetary.nodes.map((node) => ({
+    identity: node.identity?.id ?? "unknown",
+    signature: node.identity?.signature ?? "",
+  }));
 }

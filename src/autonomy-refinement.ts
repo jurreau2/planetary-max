@@ -1,3 +1,3 @@
-export function evaluateAutonomy(_input: unknown): number {
-  return 1;
+export function refineAutonomy(_input: unknown): string {
+  return "off";
 }

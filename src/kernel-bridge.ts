@@ -1,15 +1,16 @@
-export type QuantumBranch = {
-  id: string;
-  probability: number;
-  curvature: number;
-  signature: string;
-  stateDelta?: Record<string, unknown>;
-};
+import type { KernelEnvelope } from "./types";
 
-export function collapseQuantumBranches(
-  branches: QuantumBranch[],
-  _input?: unknown,
-  _meta?: unknown,
-): QuantumBranch {
-  return branches[0] ?? { id: "default", probability: 1, curvature: 0, signature: "default" };
+export async function callKernel(_env: unknown, _envelope: KernelEnvelope): Promise<Response> {
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      status: 200,
+      body: { received: true },
+      governance: _envelope.governance,
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }

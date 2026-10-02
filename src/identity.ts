@@ -1,57 +1,14 @@
-import type {
-  PlanetaryCanon,
-  PlanetaryGovernanceContext,
-  PlanetaryIdentity,
-  PlanetaryNodeSnapshot,
-  PlanetaryQuantumState,
-  PlanetaryState,
-  PlanetarySubstrate,
-  PlanetarySynchronization,
-} from "./types";
+import type { PlanetaryIdentity } from "./types";
 
-export type PlanetaryFailure = Readonly<{ code: string; message: string }>;
-
-export function initialPlanetaryState(): PlanetaryState {
-  return { nodes: [] };
-}
-
-export function synchronizePlanetaryState(synchronization: PlanetarySynchronization): PlanetaryState {
-  return { nodes: synchronization.nodes ?? [] };
-}
-
-export function planetaryNodeFromSnapshot(snapshot: PlanetaryNodeSnapshot): PlanetaryNodeSnapshot {
-  const identity: PlanetaryIdentity = snapshot.identity ?? { id: "unknown", signature: "unknown" };
-  const substrate: PlanetarySubstrate = snapshot.substrate ?? { stability: 0 };
-  const quantum: PlanetaryQuantumState = snapshot.quantum ?? { overlay: null };
-  const canon: PlanetaryCanon = snapshot.canon ?? { truths: [], signature: "" };
-
+export function deriveIdentityEnvironment(identity: PlanetaryIdentity): { id: string; signature: string } {
   return {
-    id: snapshot.id ?? snapshot.nodeId ?? identity.id,
-    identity,
-    substrate,
-    quantum,
-    canon,
+    id: identity.id,
+    signature: identity.signature,
   };
 }
 
-export function planetaryMerge(
-  state: PlanetaryState,
-  synchronization: PlanetarySynchronization,
-  governance: PlanetaryGovernanceContext = { mode: "strict" },
-): PlanetaryState {
-  return {
-    ...state,
-    nodes: synchronization.nodes ?? state.nodes,
-    governance,
-  };
+export function validateIdentitySignature(identity: PlanetaryIdentity): boolean {
+  return typeof identity.signature === "string" && identity.signature.length > 0;
 }
 
-export const executePlanetaryTick = synchronizePlanetaryState;
-
-export default {
-  initialPlanetaryState,
-  synchronizePlanetaryState,
-  planetaryNodeFromSnapshot,
-  planetaryMerge,
-  executePlanetaryTick,
-};
+export default { deriveIdentityEnvironment, validateIdentitySignature };

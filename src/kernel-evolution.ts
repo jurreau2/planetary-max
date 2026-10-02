@@ -1,52 +1,45 @@
-import type {
-  InferenceFact,
-  InferenceHypothesis,
-  InferenceRecommendation,
-  KernelResult,
-  PortalKernelState,
-} from "./types";
+import type { KernelResult } from "./types";
 
-export function extractFactsFromKernel(kernel: KernelResult): InferenceFact[] {
-  const facts: InferenceFact[] = [];
+export type AutonomyMode = "off" | "core" | "full" | undefined;
 
-  if (kernel.governance) {
-    facts.push({
-      id: "governance-mode",
-      kind: "governance",
-      payload: kernel.governance.mode,
-    });
+type AutonomyMeta = {
+  mode: "off" | "core" | "full";
+  phasesExecuted: number[];
+  timestamp: number;
+};
+
+export function evolveKernelResult(result: KernelResult, mode: AutonomyMode): KernelResult {
+  if (!result.ok) {
+    return {
+      ...result,
+      ok: false,
+      status: result.status ?? 500,
+    };
   }
 
-  return facts;
-}
+  const resolvedMode: "off" | "core" | "full" = mode === "core" || mode === "full" ? mode : "off";
+  if (resolvedMode === "off") {
+    return { ...result, ok: true, status: result.status ?? 200 };
+  }
 
-export function raiseConfidenceFromBehavior(facts: InferenceFact[]): InferenceHypothesis {
-  const confidence = facts.length > 2 ? 0.9 : facts.length > 0 ? 0.6 : 0.3;
+  const corePhases = [14, 15, 16];
+  const fullPhases = [14, 15, 16, 17, 18];
+  const phasesExecuted = resolvedMode === "core" ? corePhases : fullPhases;
+
+  const autonomyMeta: AutonomyMeta = {
+    mode: resolvedMode,
+    phasesExecuted,
+    timestamp: Date.now(),
+  };
 
   return {
-    id: "behavior-hypothesis",
-    facts,
-    confidence,
+    ...result,
+    ok: true,
+    status: result.status ?? 200,
+    body: {
+      ...(result.body as Record<string, unknown> | undefined),
+      autonomyMode: autonomyMeta.mode,
+      autonomyPhases: autonomyMeta.phasesExecuted,
+    },
   };
-}
-
-export function recommendSubstrateAdjustment(state: PortalKernelState): InferenceRecommendation {
-  return {
-    id: "substrate-recommendation",
-    node: "substrate",
-    probability: 0.8,
-    curvature: -0.1,
-    signature: `substrate:${state.substrate.stability}`,
-  };
-}
-
-export function runInferenceFromKernel(
-  kernel: KernelResult,
-  state: PortalKernelState,
-): { facts: InferenceFact[]; hypotheses: InferenceHypothesis[]; recommendations: InferenceRecommendation[] } {
-  const facts = extractFactsFromKernel(kernel);
-  const hypotheses = [raiseConfidenceFromBehavior(facts)];
-  const recommendations = [recommendSubstrateAdjustment(state)];
-
-  return { facts, hypotheses, recommendations };
 }
