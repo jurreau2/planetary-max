@@ -1,16 +1,6 @@
-import type {
-  Bindings,
-  Envelope,
-  GovernanceEnvelope,
-  IdentityEnvelope,
-  JsonObject,
-  Lane,
-  NormalizedKernelResponse,
-} from "./types";
+import type { Envelope, Lane, NormalizedKernelResponse } from "./types";
 
-export type { Bindings, Envelope, JsonObject };
-export type KernelEnvelope = Envelope;
-export type KernelResult = NormalizedKernelResponse;
+export type { Envelope, Lane, NormalizedKernelResponse };
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -22,7 +12,7 @@ export function createEnvelope(
   identity: string,
   governanceContext: Record<string, unknown> = {},
 ): Envelope {
-  const publicIdentity: IdentityEnvelope = {
+  const publicIdentity = {
     credential: identity,
     id: identity || "system",
     type: "user",
@@ -31,7 +21,7 @@ export function createEnvelope(
     attributes: payload,
   };
 
-  const governance: GovernanceEnvelope = {
+  const governance = {
     umbrella: { allowed: true, policy: "planetary" },
     planetary: { allowed: true, policy: "planetary" },
     session: { allowed: true, policy: "session" },
@@ -40,12 +30,12 @@ export function createEnvelope(
   return {
     id: globalThis.crypto?.randomUUID?.() ?? `env-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     type,
-    payload: payload as JsonObject,
+    payload,
     identity: publicIdentity,
     governanceContext: {
       ...governance,
       ...governanceContext,
-    } as GovernanceEnvelope,
+    },
     metadata: {
       route: {
         entryId: type,
@@ -63,8 +53,8 @@ export function extractLaneData(response: unknown): unknown {
 }
 
 export function normalizeResponse(
-  result: KernelResult,
-  envelope: KernelEnvelope,
+  result: NormalizedKernelResponse,
+  envelope: Envelope,
 ): Record<string, unknown> {
   if (!result.ok) {
     return {

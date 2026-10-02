@@ -1,11 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import type { Bindings, KernelEnvelope, KernelResult } from "./types";
+import type { Bindings, Envelope, Lane, NormalizedKernelResponse } from "./types";
 import { isRecord } from "./contracts";
-import { callKernel, KernelEngine } from "./kernel-bridge";
-
-type JsonObject = Record<string, unknown>;
+import KernelEngine from "./kernel-bridge";
 
 type UmbrellaOperation =
   | "identity.physics.license"
@@ -18,10 +16,6 @@ type UmbrellaOperation =
   | "structural.truth.license";
 
 const app = new Hono<{ Bindings: Bindings }>();
-
-function isJsonObject(value: unknown): value is JsonObject {
-  return isRecord(value);
-}
 
 function invalidJson(message: string): Response {
   return errorResponse(400, "INVALID_JSON", message);
@@ -36,14 +30,18 @@ app.use(
   }),
 );
 
-app.get("/", (c) => c.json({
-  status: "Portal-OS live",
-  worker: "planetary-max",
-  mode: c.env.PLANETARY_MODE,
-  umbrella: c.env.UMBRELLA_ENFORCEMENT,
-}));
+app.get("/", (c) =>
+  c.json({
+    status: "Portal-OS live",
+    worker: "planetary-max",
+    mode: c.env.PLANETARY_MODE,
+    umbrella: c.env.UMBRELLA_ENFORCEMENT,
+  }),
+);
 
-app.get("/health", (context) => context.json({ status: "ok", service: "planetary-max" }));
+app.get("/health", (context) =>
+  context.json({ status: "ok", service: "planetary-max" }),
+);
 
 app.post("/api/kernel/message", async (c) => {
   const identity = bearerToken(c.req.header("Authorization"));
@@ -56,16 +54,21 @@ app.post("/api/kernel/message", async (c) => {
     return errorResponse(400, "INVALID_JSON", "Request body must be JSON");
   }
 
-  if (!isRecord(body) || typeof body.type !== "string") {
+  if (!isRecord(body) || typeof (body as { type?: unknown }).type !== "string") {
     return errorResponse(400, "INVALID_MESSAGE", "type and object payload are required");
   }
 
-  const payload = body.payload === undefined ? {} : body.payload;
+  const payload = (body as { payload?: unknown }).payload ?? {};
   if (!isRecord(payload)) {
     return errorResponse(400, "INVALID_MESSAGE", "type and object payload are required");
   }
 
-  const envelope = createEnvelope(typeof body.type === "string" ? body.type : "kernel.message", payload as JsonObject, identity);
+  const envelope = createEnvelope(
+    (body as { type: string }).type,
+    payload,
+    identity,
+  );
+
   return kernelResponse(c.env, envelope);
 });
 
@@ -73,8 +76,7 @@ app.post("/os/kernel/message", async (context) => {
   const identity = bearerToken(context.req.header("Authorization"));
   if (!identity) return unauthenticatedResponse();
 
-  const payload: JsonObject = {};
-  return kernelResponse(context.env, createEnvelope("os.kernel.message", payload, identity), true);
+  return kernelResponse(context.env, createEnvelope("os.kernel.message", {}, identity), true);
 });
 
 const umbrellaRoutes: Array<[string, UmbrellaOperation]> = [
@@ -89,11 +91,13 @@ const umbrellaRoutes: Array<[string, UmbrellaOperation]> = [
 ];
 
 for (const [path, type] of umbrellaRoutes) {
-  app.post(path, async (c) => umbrellaRequest(c.env, c.req.header("Authorization"), c.req.raw, type));
+  app.post(path, async (c) =>
+    umbrellaRequest(c.env, c.req.header("Authorization"), c.req.raw, type),
+  );
 }
 
 app.post("/universe/tick", async (context) => {
-  let payload: JsonObject = {};
+  let payload: object = {};
   const contentType = context.req.header("Content-Type") ?? "";
 
   if (contentType.includes("application/json")) {
@@ -107,20 +111,30 @@ app.post("/universe/tick", async (context) => {
     if (!isRecord(body)) {
       return errorResponse(400, "INVALID_JSON", "Tick payload must be an object");
     }
-    if (!isJsonObject(body)) return invalidJson("Tick payload must be an object");
-    payload = body as JsonObject;
+
+    payload = body;
   }
 
   return normalizedRequest(context.env, context.req.header("Authorization"), "universe.tick", payload);
 });
 
-async function normalizedRequest(env: Bindings, authorization: string | undefined, type: string, payload: JsonObject): Promise<Response> {
+async function normalizedRequest(
+  env: Bindings,
+  authorization: string | undefined,
+  type: string,
+  payload: object,
+): Promise<Response> {
   const identity = bearerToken(authorization);
   if (!identity) return unauthenticatedResponse();
   return kernelResponse(env, createEnvelope(type, payload, identity), true);
 }
 
-async function umbrellaRequest(env: Bindings, authorization: string | undefined, request: Request, type: UmbrellaOperation): Promise<Response> {
+async function umbrellaRequest(
+  env: Bindings,
+  authorization: string | undefined,
+  request: Request,
+  type: UmbrellaOperation,
+): Promise<Response> {
   const identity = bearerToken(authorization);
   if (!identity) return unauthenticatedResponse();
 
@@ -135,27 +149,52 @@ async function umbrellaRequest(env: Bindings, authorization: string | undefined,
     return errorResponse(400, "INVALID_JSON", "Umbrella payload must be an object");
   }
 
-  return kernelResponse(env, createEnvelope(type, payload as JsonObject, identity), true);
+  return kernelResponse(env, createEnvelope(type, payload, identity), true);
 }
 
-function createEnvelope(type: string, payload: JsonObject, identity: string): KernelEnvelope {
+function createEnvelope(type: string, payload: object, identity: string): Envelope {
   return {
-    lane: "sim",
+    id: globalThis.crypto?.randomUUID?.() ?? `env-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    type,
     payload,
-    identity,
-    governance: {
-      mode: "strict",
-      decision: "allow",
-      reason: type,
+    identity: {
+      id: identity || "system",
+      credential: identity,
+      type: "user",
+      authenticated: Boolean(identity),
+      roles: ["user"],
+      attributes: payload,
     },
-  } as unknown as KernelEnvelope;
+    governanceContext: {
+      umbrella: { allowed: true, policy: "planetary" },
+      planetary: { allowed: true, policy: "planetary" },
+      session: { allowed: true, policy: "session" },
+    },
+    metadata: {
+      route: {
+        entryId: type,
+        lane: "sim" as Lane,
+      },
+    },
+  };
 }
 
-async function kernelResponse(env: Bindings, envelope: KernelEnvelope, normalize = false): Promise<Response> {
+async function kernelResponse(
+  env: Bindings,
+  envelope: Envelope,
+  normalize = false,
+): Promise<Response> {
   try {
-    const response = await callKernel(env, envelope);
-    const result = await response.json<KernelResult>();
-    const status = result.ok === false ? kernelErrorStatus((result as Record<string, unknown>).status) : response.status;
+    const engine = new KernelEngine({
+      identity: envelope.identity.id,
+      governanceContext: envelope.governanceContext,
+      planetaryMode: "single",
+      umbrellaEnforcement: "strict",
+      storage: (env as unknown as { STORAGE?: DurableObjectStorage }).STORAGE as DurableObjectStorage,
+    });
+
+    const result = await engine.dispatch(envelope);
+    const status = result.ok === false ? kernelErrorStatus(result.status) : 200;
 
     if (result.ok === false || !normalize) {
       return Response.json(result, { status });
@@ -168,23 +207,26 @@ async function kernelResponse(env: Bindings, envelope: KernelEnvelope, normalize
   }
 }
 
-function normalizeResponse(result: KernelResult, envelope: KernelEnvelope): Record<string, unknown> {
+function normalizeResponse(
+  result: NormalizedKernelResponse,
+  envelope: Envelope,
+): Record<string, unknown> {
   if (!result.ok) return result as unknown as Record<string, unknown>;
 
   return {
     ok: true,
-    data: (result as Record<string, unknown>).body ?? {},
+    data: result.data ?? {},
     meta: {
-      lane: (envelope as Record<string, unknown>).lane,
-      identity: (result as Record<string, unknown>).identity ?? (envelope as Record<string, unknown>).identity,
-      governance: (result as Record<string, unknown>).governance ?? (envelope as Record<string, unknown>).governance,
+      lane: envelope.metadata?.route?.lane ?? "sim",
+      identity: envelope.identity.id,
+      governance: envelope.governanceContext,
     },
   };
 }
 
 function extractLaneData(response: unknown): unknown {
   if (!isRecord(response)) return {};
-  if ("body" in response) return response.body;
+  if ("body" in response) return (response as { body?: unknown }).body;
   return {};
 }
 
@@ -211,16 +253,12 @@ function errorResponse(status: number, code: string, message: string): Response 
 
 export class PortalKernel {
   private readonly storage: DurableObjectStorage;
-  private readonly planetaryMode: string;
-  private readonly umbrellaEnforcement: string;
 
   constructor(
     state: DurableObjectState,
     env: Pick<Bindings, "PLANETARY_MODE" | "UMBRELLA_ENFORCEMENT">,
   ) {
     this.storage = state.storage;
-    this.planetaryMode = (env as Record<string, unknown>).PLANETARY_MODE as string ?? "single";
-    this.umbrellaEnforcement = (env as Record<string, unknown>).UMBRELLA_ENFORCEMENT as string ?? "strict";
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -236,33 +274,21 @@ export class PortalKernel {
       return errorResponse(400, "INVALID_JSON", "Kernel envelope must be JSON");
     }
 
-    if (!validateEnvelope(envelope)) {
+    if (!isRecord(envelope)) {
       return errorResponse(400, "INVALID_MESSAGE", "Kernel envelope is missing required fields");
     }
 
     const engine = new KernelEngine({
-      identity: (envelope as Record<string, unknown>).identity,
-      governance: (envelope as Record<string, unknown>).governance,
-      planetaryMode: this.planetaryMode,
-      umbrellaEnforcement: this.umbrellaEnforcement,
+      identity: (envelope as { identity?: { id?: string } }).identity?.id ?? "system",
+      governanceContext: (envelope as { governanceContext?: object }).governanceContext ?? {},
+      planetaryMode: "single",
+      umbrellaEnforcement: "strict",
       storage: this.storage,
     });
 
-    const result = await engine.dispatch(envelope as KernelEnvelope);
-    return Response.json(result, { status: result.ok ? 200 : kernelErrorStatus((result as Record<string, unknown>).status) });
+    const result = await engine.dispatch(envelope as Envelope);
+    return Response.json(result, { status: result.ok ? 200 : kernelErrorStatus(result.status) });
   }
 }
 
-function validateEnvelope(value: unknown): value is KernelEnvelope {
-  return (
-    isRecord(value) &&
-    typeof value.lane === "string" &&
-    value.lane.length > 0 &&
-    isRecord(value.payload) &&
-    (typeof value.identity === "string" || value.identity === null || value.identity === undefined)
-  );
-}
-
 export default app;
-
-export { app, createEnvelope, extractLaneData, normalizeResponse };
