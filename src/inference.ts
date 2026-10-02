@@ -1,54 +1,40 @@
-import type {
-  InferenceFact,
-  InferenceHypothesis,
-  InferenceRecommendation,
-  KernelResult,
-  PortalKernelState,
-} from "./types";
+import type { PlanetaryState } from "./types";
 
-export function extractFactsFromKernel(kernel: KernelResult): InferenceFact[] {
-  const facts: InferenceFact[] = [];
+/**
+ * Phase‑19 Inference Model
+ *
+ * The inference lane no longer uses:
+ * - InferenceFact
+ * - InferenceHypothesis
+ * - InferenceRecommendation
+ * - PortalKernelState
+ * - kind / facts / node / probability / curvature / signature
+ *
+ * The canonical Phase‑19 inference output is a flat autonomy‑like structure:
+ * {
+ *   mode: "inference",
+ *   stable: boolean,
+ *   score: number,
+ *   preserved: boolean
+ * }
+ */
 
-  if (kernel.governance) {
-    facts.push({
-      id: "governance-mode",
-      kind: "governance",
-      payload: kernel.governance.mode,
-    });
-  }
+export function evaluateInference(state: PlanetaryState) {
+  const node = state.nodes.at(-1);
 
-  return facts;
-}
-
-export function raiseConfidenceFromBehavior(facts: InferenceFact[]): InferenceHypothesis {
-  const confidence = facts.length > 2 ? 0.9 : facts.length > 0 ? 0.6 : 0.3;
+  // Phase‑19 inference is intentionally minimal:
+  // it reports stability + preservation based on node substrate/canon presence.
+  const hasSubstrate = !!node?.substrate;
+  const hasCanon = !!node?.canon;
 
   return {
-    id: "behavior-hypothesis",
-    facts,
-    confidence,
+    mode: "inference",
+    stable: hasSubstrate && hasCanon,
+    score: hasSubstrate && hasCanon ? 1 : 0,
+    preserved: hasCanon,
   };
 }
 
-export function recommendSubstrateAdjustment(state: PortalKernelState): InferenceRecommendation {
-  return {
-    id: "substrate-recommendation",
-    node: "substrate",
-    probability: 0.8,
-    curvature: -0.1,
-    signature: `substrate:${state.substrate.stability}`,
-  };
-}
-
-export function runInferenceFromKernel(
-  kernel: KernelResult,
-  state: PortalKernelState,
-): { facts: InferenceFact[]; hypotheses: InferenceHypothesis[]; recommendations: InferenceRecommendation[] } {
-  const facts = extractFactsFromKernel(kernel);
-  const hypotheses = [raiseConfidenceFromBehavior(facts)];
-  const recommendations = [recommendSubstrateAdjustment(state)];
-
-  return { facts, hypotheses, recommendations };
-}
-
-export default { extractFactsFromKernel, raiseConfidenceFromBehavior, recommendSubstrateAdjustment, runInferenceFromKernel };
+export default {
+  evaluateInference,
+};
