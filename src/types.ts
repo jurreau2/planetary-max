@@ -1,56 +1,33 @@
-//
-// Phase-19 Unified Type Surface
-// Re-exports canonical contracts from src/maxos/types.ts only
-//
+import type { NormalizedKernelResponse } from "./types";
 
-export type {
-  JsonPrimitive,
-  JsonValue,
-  JsonObject,
-  IdentityEnvelope,
-  GovernanceRule,
-  GovernanceEnvelope,
-  IdentityMetadata,
-  GovernanceMetadata,
-  EnforcementMetadata,
-  RouteMetadata,
-  TraceMetadata,
-  EnvelopeMetadata,
-  Envelope,
-  EnforcedEnvelope,
-  Lane,
-  LaneResponse,
-  UniverseResponse,
-  SIMResponse,
-  TECResponse,
-  OrchestratedEnvelope,
-  NormalizedKernelResponse,
-  MaxOsBindings,
-  MaxOsVariables,
-  MaxOsHonoEnv,
-} from './maxos/types';
+export type AutonomyMode = "off" | "core" | "full" | undefined;
 
-// Phase-19 Node-Based PlanetaryState (no legacy flat fields)
-export type PlanetaryNodeSnapshot = {
-  id?: string;
-  nodeId?: string;
-  tick?: number;
-  identity?: { id: string; signature: string };
-  identities?: { id: string; signature: string }[];
-  quantum?: { overlay?: null; branches?: [] };
-  substrate?: { stability: number };
-  substrates?: { stability: number }[];
-  canon?: { truths: []; signature: string };
-  truthSignatures?: Record<string, string>;
-  inferenceDelta?: Record<string, unknown>;
-};
+export function evolveKernelResult(
+  result: NormalizedKernelResponse,
+  mode: AutonomyMode,
+): NormalizedKernelResponse {
+  if (!result.ok) {
+    return {
+      ...result,
+      ok: false,
+      status: result.status ?? 500,
+    };
+  }
 
-export type PlanetaryState = {
-  nodes: PlanetaryNodeSnapshot[];
-  globalTick?: number;
-  synchronizedAt?: number;
-  packetSignature?: string;
-};
+  const resolvedMode: "off" | "core" | "full" = mode === "core" || mode === "full" ? mode : "off";
+  if (resolvedMode === "off") {
+    return { ...result, ok: true, status: result.status ?? 200 };
+  }
 
-// Backward compat: Bindings type
-export type Bindings = Record<string, unknown>;
+  const phases = resolvedMode === "core" ? [14, 15, 16] : [14, 15, 16, 17, 18];
+
+  return {
+    ...result,
+    status: result.status ?? 200,
+    data: {
+      ...((result.data as Record<string, unknown> | undefined) ?? {}),
+      autonomyMode: resolvedMode,
+      autonomyPhases: phases,
+    },
+  };
+}

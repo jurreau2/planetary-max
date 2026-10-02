@@ -1,12 +1,9 @@
 import type {
-  PlanetaryCanon,
-  PlanetaryGovernanceContext,
-  PlanetaryIdentity,
+  Envelope,
+  JsonObject,
+  NormalizedKernelResponse,
   PlanetaryNodeSnapshot,
-  PlanetaryQuantumState,
   PlanetaryState,
-  PlanetarySubstrate,
-  PlanetarySynchronization,
 } from "./types";
 
 export type PlanetaryFailure = Readonly<{ code: string; message: string }>;
@@ -15,34 +12,49 @@ export function initialPlanetaryState(): PlanetaryState {
   return { nodes: [] };
 }
 
-export function synchronizePlanetaryState(synchronization: PlanetarySynchronization): PlanetaryState {
-  return { nodes: synchronization.nodes ?? [] };
+export type PlanetarySynchronization = {
+  nodes?: PlanetaryNodeSnapshot[];
+  globalTick?: number;
+  synchronizedAt?: number;
+  packetSignature?: string;
+};
+
+export function synchronizePlanetaryState(
+  synchronization: PlanetarySynchronization = {},
+): PlanetaryState {
+  return {
+    nodes: synchronization.nodes ?? [],
+    globalTick: synchronization.globalTick ?? 0,
+    synchronizedAt: synchronization.synchronizedAt ?? Date.now(),
+    packetSignature: synchronization.packetSignature ?? "phase-19",
+  };
 }
 
 export function planetaryNodeFromSnapshot(snapshot: PlanetaryNodeSnapshot): PlanetaryNodeSnapshot {
-  const identity: PlanetaryIdentity = snapshot.identity ?? { id: "unknown", signature: "unknown" };
-  const substrate: PlanetarySubstrate = snapshot.substrate ?? { stability: 0 };
-  const quantum: PlanetaryQuantumState = snapshot.quantum ?? { overlay: null };
-  const canon: PlanetaryCanon = snapshot.canon ?? { truths: [], signature: "" };
+  const identity = snapshot.identity ?? { id: "unknown", signature: "unknown" };
+  const substrate = snapshot.substrate ?? { stability: 0 };
+  const quantum = snapshot.quantum ?? { overlay: null };
 
   return {
+    ...snapshot,
     id: snapshot.id ?? snapshot.nodeId ?? identity.id,
     identity,
     substrate,
     quantum,
-    canon,
   };
 }
 
 export function planetaryMerge(
   state: PlanetaryState,
-  synchronization: PlanetarySynchronization,
-  governance: PlanetaryGovernanceContext = { mode: "strict" },
+  synchronization: PlanetarySynchronization = {},
 ): PlanetaryState {
+  const nextNodes = synchronization.nodes ?? state.nodes;
   return {
     ...state,
-    nodes: synchronization.nodes ?? state.nodes,
-    governance,
+    nodes: nextNodes,
+    globalTick: synchronization.globalTick ?? state.globalTick ?? 0,
+    synchronizedAt: synchronization.synchronizedAt ?? state.synchronizedAt ?? Date.now(),
+    packetSignature: synchronization.packetSignature ?? state.packetSignature ?? "phase-19",
   };
 }
 
@@ -53,8 +65,8 @@ export function isPlanetaryFailure(value: unknown): value is PlanetaryFailure {
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    (value as any).code === "INVALID_PLANETARY_STATE" &&
-    typeof (value as any).message === "string"
+    (value as Record<string, unknown>).code === "INVALID_PLANETARY_STATE" &&
+    typeof (value as Record<string, unknown>).message === "string"
   );
 }
 
