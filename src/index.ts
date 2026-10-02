@@ -3,8 +3,7 @@ import { cors } from "hono/cors";
 
 import type { Bindings, KernelEnvelope, KernelResult } from "./types";
 import { isRecord } from "./contracts";
-import { callKernel } from "./kernel-bridge";
-import { KernelEngine } from "./kernel-engine";
+import { callKernel, KernelEngine } from "./kernel-bridge";
 
 type JsonObject = Record<string, unknown>;
 
@@ -139,7 +138,7 @@ async function umbrellaRequest(env: Bindings, authorization: string | undefined,
   return kernelResponse(env, createEnvelope(type, payload as JsonObject, identity), true);
 }
 
-export function createEnvelope(type: string, payload: JsonObject, identity: string): KernelEnvelope {
+function createEnvelope(type: string, payload: JsonObject, identity: string): KernelEnvelope {
   return {
     lane: "sim",
     payload,
@@ -149,14 +148,14 @@ export function createEnvelope(type: string, payload: JsonObject, identity: stri
       decision: "allow",
       reason: type,
     },
-  };
+  } as unknown as KernelEnvelope;
 }
 
 async function kernelResponse(env: Bindings, envelope: KernelEnvelope, normalize = false): Promise<Response> {
   try {
     const response = await callKernel(env, envelope);
     const result = await response.json<KernelResult>();
-    const status = result.ok === false ? kernelErrorStatus(result.status) : response.status;
+    const status = result.ok === false ? kernelErrorStatus((result as Record<string, unknown>).status) : response.status;
 
     if (result.ok === false || !normalize) {
       return Response.json(result, { status });
@@ -169,21 +168,21 @@ async function kernelResponse(env: Bindings, envelope: KernelEnvelope, normalize
   }
 }
 
-export function normalizeResponse(result: KernelResult, envelope: KernelEnvelope): Record<string, unknown> {
+function normalizeResponse(result: KernelResult, envelope: KernelEnvelope): Record<string, unknown> {
   if (!result.ok) return result as unknown as Record<string, unknown>;
 
   return {
     ok: true,
-    data: result.body ?? {},
+    data: (result as Record<string, unknown>).body ?? {},
     meta: {
-      lane: envelope.lane,
-      identity: result.identity ?? envelope.identity,
-      governance: result.governance ?? envelope.governance,
+      lane: (envelope as Record<string, unknown>).lane,
+      identity: (result as Record<string, unknown>).identity ?? (envelope as Record<string, unknown>).identity,
+      governance: (result as Record<string, unknown>).governance ?? (envelope as Record<string, unknown>).governance,
     },
   };
 }
 
-export function extractLaneData(response: unknown): unknown {
+function extractLaneData(response: unknown): unknown {
   if (!isRecord(response)) return {};
   if ("body" in response) return response.body;
   return {};
@@ -220,8 +219,8 @@ export class PortalKernel {
     env: Pick<Bindings, "PLANETARY_MODE" | "UMBRELLA_ENFORCEMENT">,
   ) {
     this.storage = state.storage;
-    this.planetaryMode = env.PLANETARY_MODE ?? "single";
-    this.umbrellaEnforcement = env.UMBRELLA_ENFORCEMENT ?? "strict";
+    this.planetaryMode = (env as Record<string, unknown>).PLANETARY_MODE as string ?? "single";
+    this.umbrellaEnforcement = (env as Record<string, unknown>).UMBRELLA_ENFORCEMENT as string ?? "strict";
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -242,15 +241,15 @@ export class PortalKernel {
     }
 
     const engine = new KernelEngine({
-      identity: envelope.identity,
-      governance: envelope.governance,
+      identity: (envelope as Record<string, unknown>).identity,
+      governance: (envelope as Record<string, unknown>).governance,
       planetaryMode: this.planetaryMode,
       umbrellaEnforcement: this.umbrellaEnforcement,
       storage: this.storage,
     });
 
-    const result = await engine.dispatch(envelope);
-    return Response.json(result, { status: result.ok ? 200 : kernelErrorStatus(result.status) });
+    const result = await engine.dispatch(envelope as KernelEnvelope);
+    return Response.json(result, { status: result.ok ? 200 : kernelErrorStatus((result as Record<string, unknown>).status) });
   }
 }
 
