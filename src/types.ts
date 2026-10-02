@@ -59,14 +59,61 @@ export type Bindings = Record<string, unknown>;
 export type KernelEnvelope = Envelope;
 export type KernelResult = NormalizedKernelResponse;
 
-// Re-export commonly used types
-export type {
-  EpistemicTimeline,
-  InstituteCanon,
-  InstituteState,
-  QuantumOverlay,
-  SimAgentState,
-  SimSubstrateState,
-  SimTecTaskState,
-  SimWindowState,
-} from './types';
+// Phase-19 Governance & Quantum Types
+export type UmbrellaMode = 'off' | 'advisory' | 'strict';
+
+export type QuantumGovernanceContext = {
+  mode: UmbrellaMode;
+  identity?: string;
+};
+
+// Phase-19 Identity Types
+export type PlanetaryIdentity = {
+  id: string;
+  credential?: string;
+  signature?: string;
+};
+
+// Phase-19 Inference Types
+export type InferenceFact = {
+  id: string;
+  content: unknown;
+  confidence: number;
+};
+
+export type InferenceHypothesis = {
+  id: string;
+  content: unknown;
+  supportingFacts: string[];
+};
+
+export type InferenceRecommendation = {
+  id: string;
+  content: unknown;
+  confidence: number;
+};
+
+export type PortalKernelState = {
+  identity: PlanetaryIdentity;
+  governance: QuantumGovernanceContext;
+  timestamp: number;
+};
+
+// Phase-19 Quantum Types
+export type QuantumBranch = {
+  id: string;
+  state: unknown;
+  probability: number;
+};
+
+export type QuantumCollapsePolicy = 'deterministic' | 'probabilistic' | 'deferred';
+
+// Phase-19 SIM Types (preventing circular re-exports)
+export type EpistemicTimeline = Record<string, unknown>;
+export type InstituteCanon = Record<string, unknown>;
+export type InstituteState = Record<string, unknown>;
+export type QuantumOverlay = Record<string, unknown>;
+export type SimAgentState = Record<string, unknown>;
+export type SimSubstrateState = Record<string, unknown>;
+export type SimTecTaskState = Record<string, unknown>;
+export type SimWindowState = Record<string, unknown>;
