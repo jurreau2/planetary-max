@@ -4,7 +4,8 @@
 // Planetary‑MAX Quantum Substrate
 //
 
-import {
+import { Hono } from "hono";
+import type {
   QuantumOverlay,
   PlanetaryState,
   PlanetaryNodeSnapshot,
@@ -16,8 +17,22 @@ import {
   SimTecTaskState,
   EpistemicTimeline,
   InstituteCanon,
+  Bindings,
 } from "./types";
-import { runInference } from "./inference";
+
+type AuthContext = { authenticated?: boolean };
+
+function requireAuth(ctx: AuthContext): void {
+  if (!ctx.authenticated) {
+    throw new Error("Authentication required");
+  }
+}
+
+function introspectionHandler(kind: IntrospectionKind) {
+  return (c: any) => {
+    return c.json({ kind, status: "ok" });
+  };
+}
 
 export type IntrospectionKind =
   | "sim.behavior"
@@ -44,18 +59,6 @@ export type IntrospectionKind =
   | "planetary.canon"
   | "planetary.governance"
   | "planetary.state";
-
-type SimulationIntrospectionState = PortalKernelState & Readonly<{
-  eventLog: ReadonlyArray<SimEvent>;
-  diffLog: ReadonlyArray<SimTickDiff>;
-  tecTasks: Readonly<Record<string, SimTecTaskState>>;
-  quantum: QuantumOverlay;
-}>;
-
-const KERNEL_OBJECT_NAME = "portal-kernel";
-const SIMULATION_STATE_URL = "https://portal-kernel.invalid/kernel/sim/state";
-const INSTITUTE_STATE_URL = "https://portal-kernel.invalid/kernel/institute/state";
-const PLANETARY_STATE_URL = "https://portal-kernel.invalid/kernel/planetary/state";
 
 const INSTITUTE_INTROSPECTION_KINDS: ReadonlySet<IntrospectionKind> =
   new Set<IntrospectionKind>([
@@ -123,16 +126,14 @@ export function attachIntrospectionRoutes(
   app.get("/api/introspection/planetary/state", introspectionHandler("planetary.state"));
 }
 
-// -------------------------------------------------------------
 // Quantum Introspection
-// -------------------------------------------------------------
 
 export function introspectQuantumState(
   global: Record<string, unknown>,
   ctx: AuthContext
 ): QuantumOverlay | null {
   requireAuth(ctx);
-  return (global[QUANTUM_STATE_KEY] as QuantumOverlay) ?? null;
+  return (global.quantum as QuantumOverlay) ?? null;
 }
 
 export function introspectQuantumBranches(
@@ -160,12 +161,20 @@ export function introspectQuantumSignature(
 }
 
 function planetaryIntrospectionResult(kind: IntrospectionKind, state: PlanetaryState): unknown {
-  if (kind === "planetary.identity") return state.identities;
-  if (kind === "planetary.substrate") return state.substrate;
-  if (kind === "planetary.quantum") return state.quantum;
-  if (kind === "planetary.canon") return state.canon;
+  if (kind === "planetary.identity") {
+    return state.nodes.map((n) => n.identity ?? { id: "", signature: "" });
+  }
+  if (kind === "planetary.substrate") {
+    return state.nodes.map((n) => n.substrate ?? { stability: 0 });
+  }
+  if (kind === "planetary.quantum") {
+    return state.nodes.map((n) => n.quantum ?? { overlay: null });
+  }
+  if (kind === "planetary.canon") {
+    return state.nodes.map((n) => n.canon ?? { truths: [], signature: "" });
+  }
   if (kind === "planetary.governance") {
-    return { ...state.governance, advisories: state.advisories };
+    return state.governance ?? { mode: "strict" };
   }
   return state;
 }
@@ -202,9 +211,7 @@ export function introspectSimTecPipeline(
   return (sim.tec as Record<string, SimTecTaskState>) ?? {};
 }
 
-// -------------------------------------------------------------
 // Kernel Introspection
-// -------------------------------------------------------------
 
 export function introspectKernelHeatmap(
   kernel: KernelResult,
@@ -219,7 +226,7 @@ export function introspectKernelMessages(
   ctx: AuthContext
 ) {
   requireAuth(ctx);
-  return kernel.body?.messages ?? [];
+  return (kernel.body as any)?.messages ?? [];
 }
 
 export function introspectKernelLogs(
@@ -227,7 +234,7 @@ export function introspectKernelLogs(
   ctx: AuthContext
 ) {
   requireAuth(ctx);
-  return kernel.body?.logs ?? [];
+  return (kernel.body as any)?.logs ?? [];
 }
 
 export function introspectInferenceArtifacts(
@@ -235,12 +242,10 @@ export function introspectInferenceArtifacts(
   ctx: AuthContext
 ) {
   requireAuth(ctx);
-  return kernel.body?.inference ?? null;
+  return (kernel.body as any)?.inference ?? null;
 }
 
-// -------------------------------------------------------------
 // Institute Introspection
-// -------------------------------------------------------------
 
 export function introspectInstituteCanon(
   institute: InstituteState,
@@ -296,16 +301,14 @@ export function introspectInstituteTimelines(
   };
 }
 
-// -------------------------------------------------------------
 // Planetary Introspection
-// -------------------------------------------------------------
 
 export function introspectPlanetaryIdentity(
   planetary: PlanetaryState,
   ctx: AuthContext
 ) {
   requireAuth(ctx);
-  return planetary.nodes.map((n) => n.identity);
+  return planetary.nodes.map((n) => n.identity ?? { id: "", signature: "" });
 }
 
 export function introspectPlanetarySubstrate(
@@ -313,7 +316,7 @@ export function introspectPlanetarySubstrate(
   ctx: AuthContext
 ) {
   requireAuth(ctx);
-  return planetary.nodes.map((n) => n.substrate);
+  return planetary.nodes.map((n) => n.substrate ?? { stability: 0 });
 }
 
 export function introspectPlanetaryQuantum(
@@ -321,15 +324,16 @@ export function introspectPlanetaryQuantum(
   ctx: AuthContext
 ) {
   requireAuth(ctx);
-  return planetary.nodes.map((n) => n.quantum);
+  return planetary.nodes.map((n) => n.quantum ?? { overlay: null });
 }
 
 function isPlanetaryState(value: unknown): value is PlanetaryState {
-  return isRecord(value) && typeof value.globalTick === "number" && isRecord(value.nodes) &&
-    isRecord(value.identities) && isRecord(value.substrates) && isRecord(value.substrate) &&
-    isRecord(value.quantum) && isRecord(value.canon) && isRecord(value.governance) &&
-    typeof value.synchronizedAt === "number" && typeof value.packetSignature === "string" &&
-    Array.isArray(value.advisories);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Array.isArray((value as any).nodes)
+  );
 }
 
 export function introspectPlanetaryGovernance(
@@ -338,7 +342,7 @@ export function introspectPlanetaryGovernance(
 ) {
   requireAuth(ctx);
   return planetary.nodes.map((n) => ({
-    identity: n.identity.id,
-    signature: n.identity.signature,
+    identity: (n.identity?.id) ?? "unknown",
+    signature: (n.identity?.signature) ?? "",
   }));
 }
