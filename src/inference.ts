@@ -3,9 +3,8 @@
 // MAX‑Institute + Portal‑OS Wing
 //
 
-import {
+import type {
   GovernanceInference,
-  InferenceArtifacts,
   InferenceFact,
   InferenceFactKind,
   InferenceHypothesis,
@@ -52,7 +51,7 @@ export function recommendSubstrateAdjustment(
 ): InferenceRecommendation {
   return {
     id: "substrate-recommendation",
-    target: "substrate",
+    node: "substrate",
     payload: { stabilityDelta: -0.1 },
   };
 }
@@ -60,7 +59,7 @@ export function recommendSubstrateAdjustment(
 export function runInferenceFromKernel(
   kernel: KernelResult,
   state: PortalKernelState
-): InferenceArtifacts {
+): { facts: InferenceFact[]; hypotheses: InferenceHypothesis[]; recommendations: InferenceRecommendation[] } {
   const facts = extractFactsFromKernel(kernel);
   const hypotheses = [raiseConfidenceFromBehavior(facts)];
   const recommendations = [recommendSubstrateAdjustment(state)];
