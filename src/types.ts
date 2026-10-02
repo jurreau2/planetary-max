@@ -54,3 +54,19 @@ export type PlanetaryState = {
 
 // Backward compat: Bindings type
 export type Bindings = Record<string, unknown>;
+
+// Legacy type aliases for Phase‑19 compatibility
+export type KernelEnvelope = Envelope;
+export type KernelResult = NormalizedKernelResponse;
+
+// Re-export commonly used types
+export type {
+  EpistemicTimeline,
+  InstituteCanon,
+  InstituteState,
+  QuantumOverlay,
+  SimAgentState,
+  SimSubstrateState,
+  SimTecTaskState,
+  SimWindowState,
+} from './types';

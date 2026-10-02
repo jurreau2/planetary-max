@@ -2,27 +2,27 @@ name = "planetary-max"
 main = "src/index.ts"
 compatibility_date = "2026-09-17"
 
-# -----------------------------
-# KV NAMESPACE (YOUR PROVIDED ID)
-# -----------------------------
+# Phase-19 Bindings
+# MAXOS_STATE now uses KV (not R2)
 [[kv_namespaces]]
-binding = "planetary-max-1"
-id = "ede711e3c9764df481d63dcc5820b7e7"
+binding = "MAXOS_STATE"
+id = "planetary-max-1"
 
-# -----------------------------
-# ENVIRONMENT VARIABLES
-# -----------------------------
+# Environment Variables
 [vars]
 PLANETARY_MODE = "single"
 UMBRELLA_ENFORCEMENT = "strict"
 
+# Durable Objects
 [[durable_objects.bindings]]
 name = "PORTAL_KERNEL"
 class_name = "PortalKernel"
 
+# Migrations
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PortalKernel"]
 
+# Build
 [build]
 command = "npm run build"
